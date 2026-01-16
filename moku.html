@@ -1,0 +1,2974 @@
+<!DOCTYPE html>   
+<html lang="ja">  
+<head>  
+<meta charset="UTF-8">  
+<meta name="viewport" content="width=device-width, initial-scale=1.0">  
+<title>目撃者たちの夜</title>  
+<style>  
+  html, body{height:100%; overflow:hidden;}  
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#111;}  
+  header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee; position:sticky; top:0; z-index:400; background:#fff;}  
+  h1{margin:0;font-size:18px;}  
+  .small{font-size:12px;opacity:.75;}  
+  .join-box{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:12px; position:relative; z-index:2;}  
+  .join-box input{padding:8px;border:1px solid #ddd;border-radius:6px;font-size:16px;}  
+  .btn{padding:6px 10px;border:1px solid #ddd;border-radius:6px;background:#f8f8f8;cursor:pointer;}  
+  .btn.primary{background:#111;color:#fff;border-color:#111;}  
+  .btn.ghost{background:transparent;}  
+  .hidden{display:none;}  
+  #lobby{padding:20px;border-top:1px solid #eee; position:relative; z-index:2;}  
+  .copy-btn.copied, .btn.ghost.copied{background:#16a34a;color:#fff;border-color:#16a34a;}  
+  
+  main{  
+    position:relative;  
+    height:calc(100vh - 60px);  
+    overflow:auto;  
+    -webkit-overflow-scrolling:touch;  
+    background-size:cover;  
+    background-position:center;  
+    background-repeat:no-repeat;  
+  }  
+  main.prejoin{ background-image:url('maemain.jpg'); }  
+  main.joined{ background-image:url('maingazo.jpg'); }  
+  
+  .seat-pop{  
+    position:fixed;left:50%;bottom:10px;transform:translateX(-50%);  
+    background:orange;border:1px solid #eee;border-radius:12px;  
+    box-shadow:0 12px 28px rgba(0,0,0,.12);  
+    padding:10px;z-index:220;display:flex;flex-direction:column;gap:10px;min-width:280px;  
+  }  
+  .seat-pop.hidden{display:none;}  
+  .seat-pop .row{display:flex;gap:8px;align-items:center;}  
+  .seat-pop label{width:84px;font-size:13px;}  
+  .seat-pop .tabs{display:flex;gap:6px;flex-wrap:wrap;}  
+  .tab{padding:6px 10px;border:1px solid #ddd;border-radius:999px;cursor:pointer;user-select:none;position:relative;}  
+  .tab.disabled{opacity:.45; pointer-events:none;}  
+  .tab.disabled::after{content:'✕';position:absolute;inset:0;display:grid;place-items:center;font-size:18px;font-weight:700;color:#b91c1c;pointer-events:none;}  
+  .tab.active{background:#111;color:#fff;border-color:#111;}  
+  
+  .host-selecting-pop{  
+    position:fixed;left:50%;bottom:10px;transform:translateX(-50%);  
+    background:rgba(20,20,20,.92);color:#fff;  
+    padding:12px 16px;border-radius:14px;  
+    box-shadow:0 18px 40px rgba(0,0,0,.35);  
+    z-index:225;font-weight:800;white-space:nowrap;  
+    pointer-events:none;  
+  }  
+  .host-selecting-pop.hidden{display:none;}  
+  
+  .player-circle{  
+    position:relative;width:260px;height:260px;  
+    margin:20px auto 0;border-radius:50%;  
+    box-sizing:border-box;border:none;  
+  }  
+  .player-circle::before{content:'';}  
+  .player-tag{  
+    position:absolute;transform:translate(-50%,-50%);  
+    padding:4px 8px;border-radius:999px;background:#f8f8f8;  
+    border:1px solid #ddd;font-size:12px;white-space:nowrap;  
+    z-index:10;  
+  }  
+  .player-tag.me{ background:#111;color:#fff;border-color:#111; }  
+  
+  .player-tag .mini-hand{  
+    position:absolute;left:50%;top:100%;  
+    transform:translate(-50%,3px);  
+    width:60px;height:30px;pointer-events:none;  
+  }  
+  /* =========================  
+     ✅ mini-card：背面/表面を切り替えられるように（otherseebutleropen用）  
+     ※ 以前の「常に裏面固定」の !important を撤去  
+  ========================= */  
+  .player-tag .mini-card{  
+    position:absolute;left:50%;top:0;width:36px;height:54px;  
+    border-radius:8px;border:1px solid rgba(0,0,0,.22);  
+    transform-origin:bottom center;  
+    box-shadow:0 2px 6px rgba(0,0,0,.15);  
+    background-size: cover;  
+    background-position: center;  
+    background-repeat: no-repeat;  
+  }  
+  .player-tag .mini-card.back{  
+    background-image: var(--backImg);  
+  }  
+  .player-tag .mini-card.face{  
+    /* 画像はJSで backgroundImage を url(...) で入れる */  
+  }  
+  
+  :root{  
+    --handW:60px;  
+    --handH:90px;  
+  
+    --deckW:36px;  
+    --deckH:54px;  
+  
+    --deckUnderOffset:20px;  
+  
+    --sOffsetX: 3px;  
+    --sOffsetY: 3px;  
+    --sOutX: 26px;  
+    --sTiltBase: 5deg;  
+    --sTiltMore: 5deg;  
+    --sDurOut: 220ms;  
+    --sDurIn: 220ms;  
+    --sPause: 60ms;  
+  
+    --backImg: url("mokugekiura.jpg");  
+  }  
+  
+  .my-hand-wrapper{margin-top:45px;text-align:center;}  
+  .my-hand-title{display:none;}  
+  .my-hand{display:flex;justify-content:center;gap:8px;margin-top:6px;min-height:100px;}  
+  .my-card{  
+    width:var(--handW);height:var(--handH);  
+    border-radius:8px;border:1px solid #ddd;background:#fff;  
+    box-shadow:0 4px 12px rgba(0,0,0,.15);  
+    padding:0;  
+    position:relative;  
+    overflow:hidden;  
+  }  
+  
+  .dialog-backdrop{  
+    position:fixed;inset:0;background:rgba(0,0,0,.35);  
+    display:flex;align-items:center;justify-content:center;z-index:300;  
+  }  
+  .dialog-backdrop.hidden{display:none;}  
+  .dialog-box{  
+    background:#fff;border-radius:12px;padding:16px 18px;  
+    box-shadow:0 18px 40px rgba(0,0,0,.35);  
+    max-width:320px;width:calc(100% - 40px);  
+  }  
+  .dialog-box p{margin:0 0 12px;font-size:14px;line-height:1.6;}  
+  .dialog-buttons{display:flex;justify-content:flex-end;gap:8px;}  
+  
+  .host-settings-btn{  
+    position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;  
+    border:1px solid #ddd;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.18);  
+    display:none;align-items:center;justify-content:center;font-size:22px;cursor:pointer;z-index:230;  
+  }  
+  .host-settings-btn.visible{display:flex;}  
+  
+  .start-pop{  
+    position:fixed;right:16px;bottom:72px;background:#fff;border:1px solid #ddd;border-radius:12px;  
+    box-shadow:0 12px 28px rgba(0,0,0,.16);padding:10px 12px;z-index:240;min-width:260px;  
+    display:flex;flex-direction:column;gap:8px;  
+  }  
+  .start-pop.hidden{display:none;}  
+  .start-pop-header{display:flex;justify-content:space-between;align-items:center;gap:8px;}  
+  .start-pop-title{font-size:14px;font-weight:600;}  
+  .start-pop-main{font-size:13px;line-height:1.5;}  
+  .start-pop-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px;flex-wrap:wrap;}  
+  
+  #roomInfoLobby, #lobby h2, #lobby p {display:none;}  
+  #lobby.entered{  
+    display:flex;flex-direction:column;align-items:center;justify-content:center;  
+    min-height:calc(100vh - 60px);  
+  }  
+  
+  .help-btn{  
+    position:fixed;left:16px;bottom:16px;width:44px;height:44px;border-radius:50%;  
+    border:1px solid #111;background:#111;color:#fff;  
+    box-shadow:0 8px 20px rgba(0,0,0,.18);  
+    display:none;align-items:center;justify-content:center;  
+    font-size:22px;font-weight:800;cursor:pointer;z-index:230;  
+  }  
+  .help-btn.visible{display:flex;}  
+  
+  .help-pop-backdrop{  
+    position:fixed;inset:0;background:rgba(0,0,0,.35);  
+    display:flex;align-items:flex-end;justify-content:center;  
+    z-index:310;  
+    padding:16px;  
+  }  
+  .help-pop-backdrop.hidden{display:none;}  
+  .help-pop{  
+    width:min(520px, calc(100% - 0px));  
+    max-height:min(70vh, 640px);  
+    background:#fff;border:1px solid #ddd;border-radius:16px;  
+    box-shadow:0 18px 40px rgba(0,0,0,.35);  
+    overflow:hidden;  
+  }  
+  .help-pop-header{  
+    display:flex;align-items:center;justify-content:space-between;  
+    padding:10px 12px;border-bottom:1px solid #eee;  
+  }  
+  .help-pop-title{font-weight:800;font-size:14px;}  
+  .help-pop-body{padding:12px;overflow:auto;max-height:calc(70vh - 48px);}  
+  .help-note{  
+    font-size:12px;line-height:1.4;color:#111;  
+    opacity:.8;margin:0 0 8px;  
+  }  
+  
+  .role-row{  
+    display:flex;gap:12px;align-items:flex-start;  
+    padding:10px 0;  
+  }  
+  
+  .role-card{  
+    width:72px;height:108px;border-radius:10px;border:1px solid #ddd;background:#f8f8f8;  
+    box-shadow:0 6px 16px rgba(0,0,0,.10);  
+    flex:0 0 auto;  
+    position:relative;  
+    overflow:hidden;  
+  }  
+  .role-desc{flex:1 1 auto;}  
+  .role-desc .name{font-weight:900;margin-bottom:4px;}  
+  .role-desc .text{font-size:13px;line-height:1.55;color:#222;white-space:pre-wrap;}  
+  
+  .deck{  
+    width:var(--deckW);height:var(--deckH);  
+    border-radius:8px;  
+    position:absolute;  
+    left:50%;top:50%;  
+    transform:translate(-50%,-50%);  
+    cursor:pointer;  
+    user-select:none;  
+    display:block;  
+    z-index:20;  
+  
+    background: none !important;  
+    background-image: var(--backImg) !important;  
+    background-size: cover !important;  
+    background-position: center !important;  
+    background-repeat: no-repeat !important;  
+  
+    box-shadow:0 18px 40px rgba(0,0,0,.25);  
+    border:1px solid rgba(0,0,0,.22);  
+  }  
+  
+  .deck::before,  
+  .deck::after{content:none !important; display:none !important;}  
+  
+  .deck{  
+    color: transparent !important;  
+    font-size: 0 !important;  
+    line-height: 0 !important;  
+  }  
+  
+  .deck.disabled{  
+    pointer-events:none;  
+    filter: grayscale(.25);  
+  }  
+  
+  .deck-count{  
+    position:absolute;right:-8px;top:-8px;  
+    background:#fff;color:#111;border:1px solid #ddd;  
+    border-radius:999px;font-size:12px;font-weight:900;  
+    padding:2px 6px;  
+    box-shadow:0 6px 16px rgba(0,0,0,.18);  
+    z-index:30;  
+  }  
+  
+  .deck-shuffle-layer{  
+    position:absolute;  
+    inset:0;  
+    pointer-events:none;  
+    z-index:25;  
+  }  
+  .deck-shuffle-layer.hidden{display:none;}  
+  
+  .deck.is-shuffling{  
+    background-image: none !important;  
+    box-shadow:none;  
+    border-color: transparent;  
+  }  
+  
+  .deck-shuffle-card{  
+    position:absolute;  
+    inset:0;  
+    border:1px solid rgba(0,0,0,.22);  
+    border-radius:8px;  
+  
+    background: none !important;  
+    background-image: var(--backImg) !important;  
+    background-size: cover !important;  
+    background-position: center !important;  
+    background-repeat: no-repeat !important;  
+  
+    box-shadow:0 18px 40px rgba(0,0,0,.25);  
+    transform-origin:center;  
+    will-change:transform;  
+  }  
+  .deck-shuffle-card.back{  
+    transform: translate(var(--sOffsetX), var(--sOffsetY)) rotate(var(--sTiltBase));  
+    z-index:1;  
+  }  
+  .deck-shuffle-card.front{  
+    transform: translate(0,0) rotate(var(--sTiltBase));  
+    z-index:2;  
+  }  
+  .deck-shuffle-card.movingOut{  
+    transition: transform var(--sDurOut) ease-in-out;  
+    transform: translate(var(--sOutX), 0) rotate(calc(var(--sTiltBase) + var(--sTiltMore)));  
+  }  
+  .deck-shuffle-card.movingIn{  
+    transition: transform var(--sDurIn) ease-in-out;  
+    transform: translate(var(--sOffsetX), var(--sOffsetY)) rotate(var(--sTiltBase));  
+  }  
+  
+  .deck-under-card{  
+    width:var(--deckW);height:var(--deckH);  
+    border-radius:8px;  
+    position:absolute;  
+    left:50%;  
+    top:calc(50% + var(--deckUnderOffset));  
+    transform:translate(-50%,-50%) rotate(0deg);  
+    z-index:19;  
+    box-shadow:0 16px 36px rgba(0,0,0,.22);  
+    pointer-events:none;  
+    overflow:hidden;  
+  
+    background: none !important;  
+    background-image: var(--backImg) !important;  
+    background-size: cover !important;  
+    background-position:center !important;  
+    background-repeat:no-repeat !important;  
+    border:1px solid rgba(0,0,0,.22);  
+  }  
+  .deck-under-card.hidden{display:none;}  
+  
+  /* =========================  
+     ✅ 執事ありスタート：殺人鬼カードを左にスライド表示  
+  ========================= */  
+  .butler-killer-card{  
+    width:var(--deckW);height:var(--deckH);  
+    border-radius:8px;  
+    position:absolute;  
+    left:50%;top:50%;  
+    transform:translate(-50%,-50%) translateX(0px);  
+    z-index:23;  
+    pointer-events:none;  
+    opacity:0;  
+    box-shadow:0 18px 40px rgba(0,0,0,.25);  
+    border:1px solid rgba(0,0,0,.22);  
+    overflow:hidden;  
+    will-change:transform, opacity;  
+  }  
+  .butler-killer-card.visible{  
+    opacity:1;  
+  }  
+  .butler-killer-card.slide-left{  
+    opacity:1;  
+    transform:translate(-50%,-50%) translateX(calc(-1 * (var(--deckW) + 18px)));  
+    transition:  
+      transform var(--butlerSlideMs, 520ms) cubic-bezier(.22,.84,.44,1),  
+      opacity 180ms linear;  
+  }  
+  
+  /* =========================  
+     ✅ 追加：sub1直後に「殺人鬼以外の2枚」を右へスライド配置（山札から抜く）  
+     - 右に2枚並べて固定表示（裏面）  
+     - deckより奥にしたいので z-index は 19（deck=20より下）  
+     ✅ さらに本件：議論開始〜タイマー0まで「大小アニメ + クリック可能」を付けるためのクラスを追加  
+  ========================= */  
+  .butler-side-card{  
+    width:var(--deckW);height:var(--deckH);  
+    border-radius:8px;  
+    position:absolute;  
+    left:50%;top:50%;  
+    transform:translate(-50%,-50%) translateX(0px);  
+    z-index:19;  
+    pointer-events:none; /* ←通常はクリック不可 */  
+    opacity:0;  
+    box-shadow:0 18px 40px rgba(0,0,0,.20);  
+    border:1px solid rgba(0,0,0,.22);  
+    overflow:hidden;  
+    will-change:transform, opacity;  
+  }  
+  .butler-side-card.visible{ opacity:1; }  
+  
+  /* ✅ transformは keyframes で一括管理するため、ここでは“位置”だけ可変にする */  
+  .butler-side-card{ --butlerTx: 0px; }  
+  .butler-side-card.slide-right-1{  
+    opacity:1;  
+    --butlerTx: calc(1 * (var(--deckW) + 18px));  
+    transition:  
+      transform var(--butlerSideMs, 520ms) cubic-bezier(.22,.84,.44,1),  
+      opacity 180ms linear;  
+  }  
+  .butler-side-card.slide-right-2{  
+    opacity:1;  
+    --butlerTx: calc(2 * (var(--deckW) + 18px));  
+    transition:  
+      transform var(--butlerSideMs, 520ms) cubic-bezier(.22,.84,.44,1),  
+      opacity 180ms linear;  
+  }  
+  
+  /* ✅ 位置反映（animation/transition の transform が必ずこの形になる） */  
+  .butler-side-card{  
+    transform:translate(-50%,-50%) translateX(var(--butlerTx));  
+  }  
+  
+  /* ✅ 議論開始〜タイマー0：大小アニメ */  
+  @keyframes butlerPulse{  
+    0%,100%{ transform:translate(-50%,-50%) translateX(var(--butlerTx)) scale(1); }  
+    50%    { transform:translate(-50%,-50%) translateX(var(--butlerTx)) scale(1.12); }  
+  }  
+  .butler-side-card.pulsing{  
+    animation: butlerPulse 820ms ease-in-out infinite;  
+  }  
+  
+  /* ✅ 執事だけクリック可能にする（JSで付与） */  
+  .butler-side-card.clickable{  
+    pointer-events:auto;  
+    cursor:pointer;  
+  }  
+  .butler-side-card.clickable:hover{  
+    filter: brightness(1.05);  
+    box-shadow:0 22px 52px rgba(0,0,0,.26);  
+  }  
+  
+  .mid-pop{  
+    position:fixed;left:50%;top:50%;  
+    transform:translate(-150%,-50%);  
+    background:rgba(20,20,20,.92);color:#fff;  
+    padding:12px 16px;border-radius:14px;  
+    box-shadow:0 18px 40px rgba(0,0,0,.35);  
+    z-index:9999;font-weight:800;white-space:nowrap;  
+    pointer-events:none;  
+    font-size:14px;  
+  }  
+  .mid-pop.hidden{display:none;}  
+  @keyframes midSlideOnce{  
+    0%{transform:translate(-150%,-50%); opacity:1;}  
+    50%{transform:translate(-50%,-50%); opacity:1;}  
+    100%{transform:translate(150%,-50%); opacity:1;}  
+  }  
+  .mid-pop.play{animation:midSlideOnce 1s cubic-bezier(.22,.84,.44,1) both;}  
+  
+  .discussion-pop{  
+    position:fixed;left:50%;top:50%;  
+    transform:translate(-150%,-50%);  
+    background:rgba(139, 90, 43, .95);  
+    color:#fff;  
+    padding:14px 18px;  
+    border-radius:16px;  
+    box-shadow:0 18px 40px rgba(0,0,0,.35);  
+    z-index:9999;  
+    font-weight:900;  
+    white-space:nowrap;  
+    pointer-events:none;  
+    font-size:18px;  
+    letter-spacing:.06em;  
+  }  
+  .discussion-pop.hidden{display:none;}  
+  .discussion-pop.play{animation:midSlideOnce 1s cubic-bezier(.22,.84,.44,1) both;}  
+  
+  .discussion-timer{  
+    position:fixed;  
+    right:14px;  
+    top:72px;  
+    z-index:950;  
+    display:flex;  
+    flex-direction:column;  
+    align-items:center;  
+    gap:4px;  
+    width:64px;  
+    padding:8px 8px 6px;  
+    background:rgba(255,255,255,.92);  
+    border:1px solid rgba(0,0,0,.10);  
+    border-radius:14px;  
+    box-shadow:0 12px 28px rgba(0,0,0,.18);  
+    backdrop-filter: blur(2px);  
+    user-select:none;  
+    pointer-events:none;  
+  }  
+  .discussion-timer.hidden{display:none;}  
+  .discussion-timer svg{width:46px;height:46px;display:block;}  
+  .timer-rim{fill:none;stroke:rgba(17,17,17,.18);stroke-width:6;}  
+  .timer-hand{stroke:#111;stroke-width:5;stroke-linecap:round;}  
+  .timer-pivot{fill:#111;}  
+  .timer-text{  
+    font-size:12px;  
+    font-weight:900;  
+    letter-spacing:.04em;  
+    color:#111;  
+    line-height:1;  
+  }  
+  
+  .focus-backdrop{  
+    position:fixed;inset:0;background:rgba(0,0,0,.35);  
+    display:flex;align-items:center;justify-content:center;  
+    z-index:800;  
+  }  
+  .focus-backdrop.hidden{display:none;}  
+  .focus-stage{  
+    width:min(900px, calc(100% - 24px));  
+    height:min(560px, calc(100% - 140px));  
+    position:relative;  
+    display:flex;  
+    align-items:center;  
+    justify-content:center;  
+    gap:clamp(10px, 3vw, 24px);  
+    padding:clamp(10px, 2.5vw, 24px);  
+    box-sizing:border-box;  
+  }  
+  .big-card{  
+    position:relative;  
+    left:auto; top:auto;  
+    transform:none;  
+    width:clamp(160px, 26vw, 240px);  
+    height:clamp(240px, 38vw, 340px);  
+    border-radius:18px;  
+    background:#fff;border:1px solid #ddd;  
+    box-shadow:0 28px 70px rgba(0,0,0,.35);  
+    touch-action:none;  
+    user-select:none;  
+    z-index:0;  
+    overflow:visible;  
+  }  
+  .big-card.dragging{ z-index:20; box-shadow:0 34px 90px rgba(0,0,0,.45); }  
+  .big-card.near-wall{  
+    box-shadow:  
+      -18px 0 44px rgba(168, 85, 247, .35),  
+      0 34px 90px rgba(0,0,0,.45);  
+    border-color: rgba(168, 85, 247, .55);  
+  }  
+  
+  .receiveproof-badge{  
+    position:absolute;  
+    right:-12px;  
+    top:-12px;  
+    width:36px;  
+    height:36px;  
+    border-radius:999px;  
+    background-image:url("received.jpg");  
+    background-size:cover;  
+    background-position:center;  
+    border:2px solid #fff;  
+    box-shadow:0 10px 22px rgba(0,0,0,.25);  
+    pointer-events:none;  
+  }  
+  
+  .left-wall{  
+    position:fixed;left:0;top:0;bottom:0;  
+    width:90px;  
+    z-index:850;  
+    pointer-events:none;  
+    opacity:0;  
+    filter: blur(0px);  
+    transition: opacity .08s linear;  
+    background:  
+      radial-gradient(closest-side at 10% 50%, rgba(168,85,247,.42), rgba(168,85,247,0) 70%),  
+      linear-gradient(90deg, rgba(168,85,247,.25), rgba(168,85,247,0));  
+  }  
+  .left-wall.on{ opacity:1; filter: blur(.4px); }  
+  .left-wall::after{  
+    content:'';  
+    position:absolute;inset:-20px -10px -20px -30px;  
+    background: radial-gradient(closest-side at 0% 50%, rgba(168,85,247,.28), rgba(168,85,247,0) 70%);  
+    filter: blur(8px);  
+    opacity:.9;  
+  }  
+  
+  .card-face{  
+    background-size:cover;  
+    background-position:center;  
+    background-repeat:no-repeat;  
+    position:relative;  
+  }  
+  
+  .card-back{  
+    background: none !important;  
+    background-image: var(--backImg) !important;  
+    background-size: cover !important;  
+    background-position:center !important;  
+    background-repeat:no-repeat !important;  
+    border:1px solid rgba(0,0,0,.22);  
+  }  
+  .card-back::before,  
+  .card-back::after{content:none !important; display:none !important;}  
+  
+  .fx-card{  
+    width:var(--deckW);height:var(--deckH);  
+    border-radius:12px;  
+    position:fixed;  
+    left:0;top:0;  
+    z-index:920;  
+    pointer-events:none;  
+    box-shadow:0 14px 34px rgba(0,0,0,.22);  
+    overflow:hidden;  
+    will-change: transform;  
+  }  
+  .fx-big{  
+    width:clamp(160px, 26vw, 240px);  
+    height:clamp(240px, 38vw, 340px);  
+    border-radius:18px;  
+    position:fixed;  
+    left:0;top:0;  
+    z-index:920;  
+    pointer-events:none;  
+    box-shadow:0 28px 70px rgba(0,0,0,.35);  
+    overflow:visible;  
+    background:#fff;border:1px solid #ddd;  
+    will-change: transform;  
+  }  
+  
+  .fx-received-badge{  
+    position:absolute;  
+    right:-12px;  
+    top:-12px;  
+    width:36px;  
+    height:36px;  
+    border-radius:999px;  
+    background-image:url("received.jpg");  
+    background-size:cover;  
+    background-position:center;  
+    border:2px solid #fff;  
+    box-shadow:0 10px 22px rgba(0,0,0,.25);  
+    pointer-events:none;  
+  }  
+  
+  .role-row.optional{opacity:.35;}  
+  .role-row.optional.selected{opacity:1;}  
+  .role-row.optional .role-card{cursor:pointer;}  
+  .role-row.optional .role-desc{cursor:pointer;}  
+  .role-row.optional.disabled-view .role-card,  
+  .role-row.optional.disabled-view .role-desc{cursor:default;}  
+  .badge{  
+    display:inline-block;  
+    font-size:11px;  
+    font-weight:900;  
+    padding:2px 6px;  
+    border-radius:999px;  
+    border:1px solid #ddd;  
+    margin-left:6px;  
+    vertical-align:middle;  
+  }  
+  .badge.must{background:#111;color:#fff;border-color:#111;}  
+  .badge.add{background:#fff;color:#111;}  
+  
+  .card-face::after{ display:none !important; content:none !important; }  
+  
+  /* ✅ deck は display:block を持つので、hidden を確実に勝たせる */  
+  .deck.hidden{ display:none !important; }  
+</style>  
+</head>  
+<body>  
+  
+<header>  
+  <h1>目撃者たちの夜</h1>  
+  <div style="display:flex;align-items:center;gap:6px;">  
+    <div class="small" id="roomInfo"></div>  
+    <button class="btn ghost" id="copyLinkBtn">リンクコピー</button>  
+  </div>  
+</header>  
+  
+<main id="main" class="prejoin">  
+  <div class="join-box" id="joinBox">  
+    <input id="userName" placeholder="名前（4文字以内）" maxlength="4" />  
+    <input id="roomCode" placeholder="ルームコード（未入力で自動生成）" maxlength="12" />  
+    <button class="btn primary" id="btnJoin">入室</button>  
+  </div>  
+  
+  <div id="lobby" class="hidden">  
+    <h2>ロビー</h2>  
+    <div id="roomInfoLobby" style="margin-bottom:8px;"></div>  
+    <p>ここにテーブルや情報が表示されます。</p>  
+  
+    <div id="playerCircle" class="player-circle">  
+      <div id="deck" class="deck disabled" title="山札">  
+        <div id="deckCount" class="deck-count">11</div>  
+        <div id="deckShuffleLayer" class="deck-shuffle-layer hidden" aria-hidden="true">  
+          <div id="deckShuffleBack" class="deck-shuffle-card back"></div>  
+          <div id="deckShuffleFront" class="deck-shuffle-card front"></div>  
+        </div>  
+      </div>  
+  
+      <!-- ✅ 執事ありスタート：殺人鬼カードを左に表示（演出用） -->  
+      <div id="butlerKillerCard" class="butler-killer-card hidden" aria-hidden="true"></div>  
+  
+      <!-- ✅ 追加：sub1直後に山札右へ並べる2枚（裏面固定） -->  
+      <div id="butlerSideCard1" class="butler-side-card hidden" aria-hidden="true"></div>  
+      <div id="butlerSideCard2" class="butler-side-card hidden" aria-hidden="true"></div>  
+  
+      <div id="deckUnderCard" class="deck-under-card hidden"></div>  
+    </div>  
+  
+    <div class="my-hand-wrapper">  
+      <div class="my-hand-title">自分のカード</div>  
+      <div id="myHand" class="my-hand"></div>  
+    </div>  
+  </div>  
+</main>  
+  
+<div id="hostSelectingPop" class="host-selecting-pop hidden">ホストが人数を選択中</div>  
+<div id="midPop" class="mid-pop hidden">あなたがスタートプレイヤーです</div>  
+  
+<div id="discussionPop" class="discussion-pop hidden">議論開始！</div>  
+  
+<div id="discussionTimer" class="discussion-timer hidden" aria-label="議論タイマー">  
+  <svg viewBox="0 0 100 100" aria-hidden="true">  
+    <circle class="timer-rim" cx="50" cy="50" r="43"></circle>  
+    <g id="timerHandG" style="transform-origin:50px 50px;">  
+      <line class="timer-hand" x1="50" y1="50" x2="50" y2="18"></line>  
+    </g>  
+    <circle class="timer-pivot" cx="50" cy="50" r="4"></circle>  
+  </svg>  
+  <div id="timerText" class="timer-text">3:00</div>  
+</div>  
+  
+<div id="focusBackdrop" class="focus-backdrop hidden">  
+  <div class="focus-stage" id="focusStage"></div>  
+</div>  
+  
+<div id="leftWall" class="left-wall"></div>  
+  
+<div id="seatPop" class="seat-pop hidden">  
+  <div class="row"><label>席を選択</label><div id="seatTabs" class="tabs"></div></div>  
+  <div class="row" style="justify-content:flex-end">  
+    <button class="btn small ghost" id="btnSeatCancel">観戦</button>  
+  </div>  
+</div>  
+  
+<div id="kickDialog" class="dialog-backdrop hidden">  
+  <div class="dialog-box" id="kickDialogBox">  
+    <p id="kickMessage">既存のプレイヤーを追い出して、着席しますか？</p>  
+    <div class="dialog-buttons">  
+      <button class="btn ghost" id="btnKickNo">いいえ</button>  
+      <button class="btn primary" id="btnKickYes">はい</button>  
+    </div>  
+  </div>  
+</div>  
+  
+<button id="hostSettingsBtn" class="host-settings-btn" title="設定">⚙</button>  
+<button id="helpBtn" class="help-btn" title="正体カード一覧">？</button>  
+  
+<div id="helpBackdrop" class="help-pop-backdrop hidden">  
+  <div class="help-pop" role="dialog" aria-modal="true" aria-label="正体カード一覧">  
+    <div class="help-pop-header">  
+      <div class="help-pop-title">正体カード</div>  
+      <button id="btnHelpClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>  
+    </div>  
+    <div class="help-pop-body" id="helpBody"></div>  
+  </div>  
+</div>  
+  
+<div id="startPop" class="start-pop hidden">  
+  <div class="start-pop-header">  
+    <div class="start-pop-title">ホスト設定</div>  
+    <button id="btnStartPopClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>  
+  </div>  
+  <div class="start-pop-main">  
+    「スタート」で山札を作って中央に置き、ランダムでスタートプレイヤーを決めます。<br>  
+    （スタートプレイヤーだけ山札を引けます）<br>  
+    ※山札に入れる役職は「？」から選べます（ホストのみ）。<br>  
+    ※スタート前の山札枚数は「11（除外札込み）」表示です。  
+  </div>  
+  <div class="start-pop-actions">  
+    <button id="btnResetRoom" class="btn ghost">リセット</button>  
+    <button id="btnGameStart" class="btn primary">スタート</button>  
+  </div>  
+</div>  
+  
+<script type="module">  
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";  
+import { getDatabase, ref, set, get, update, onValue, remove, runTransaction } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";  
+  
+const firebaseConfig = {  
+  apiKey: "AIzaSyAMeKfMoHt9qOQ2VuUBpkrKuei7yGBbEi8",  
+  authDomain: "cheesetheft-fd52f.firebaseapp.com",  
+  databaseURL: "https://cheesetheft-fd52f-default-rtdb.firebaseio.com",  
+  projectId: "cheesetheft-fd52f",  
+  storageBucket: "cheesetheft-fd52f.firebasestorage.app",  
+  messagingSenderId: "298688959395",  
+  appId: "1:298688959395:web:6ac2c3eb214201f2020016",  
+  measurementId: "G-HPDFTCLR8H"  
+};  
+  
+const app = initializeApp(firebaseConfig);  
+const db  = getDatabase(app);  
+  
+const savedUserId = sessionStorage.getItem('bbUserId') || crypto.randomUUID();  
+sessionStorage.setItem('bbUserId', savedUserId);  
+  
+/* =========================  
+   ✅ 演出タイミング  
+========================= */  
+const TIMING = {  
+  DEAL_FLY_MS: 520,  
+  DRAW2_COUNT1_PAD_MS: 40,  
+  DRAW2_COUNT2_PAD_MS: 60,  
+  
+  OFFER_REVEAL_MS: 1600,  
+  TABLE_FLY_MS: 520,  
+  TABLE_SHOW_PAD_MS: 10,  
+  DISCUSSION_START_DELAY_MS: 2000,  
+  
+  START_SHUFFLE_MS: 1500,  
+  
+  START_BUTLER_KILLER_SLIDE_MS: 520,  
+  START_BUTLER_KILLER_HOLD_MS: 260,  
+  START_SHUFFLE_SUB1_MS: 1100,  
+  
+  START_BUTLER_SIDE_SLIDE_MS: 520,  
+  START_BUTLER_BEFORE_RETURN_WAIT_MS: 1000,  
+  
+  START_BUTLER_KILLER_RETURN_MS: 520,  
+  START_BUTLER_AFTER_RETURN_WAIT_MS: 0,  
+};  
+  
+const BASE_MANDATORY_ROLES = ["黄色い客人1","黄色い客人2","赤い客人","青い客人","殺人鬼"];  
+const OPTIONAL_ROLES  = ["狂人","執事","富豪","弁護士","探偵","爆弾魔"];  
+const ALL_ROLES = [...new Set([...BASE_MANDATORY_ROLES, ...OPTIONAL_ROLES])];  
+  
+function mandatoryRolesByCount(n){  
+  if (n === 2) return ["黄色い客人1","青い客人","殺人鬼"];  
+  if (n === 3) return ["黄色い客人1","赤い客人","青い客人","殺人鬼"];  
+  return ["黄色い客人1","黄色い客人2","赤い客人","青い客人","殺人鬼"];  
+}  
+  
+function getPlannedPlayerCount(){  
+  const mp = Number(state?.room?.maxPlayers || 0);  
+  if (mp >= 2) return mp;  
+  const seated = Number(state?.latestPlayers?.length || 0);  
+  if (seated >= 2) return seated;  
+  return 4;  
+}  
+function getMandatoryRolesPlanned(){ return mandatoryRolesByCount(getPlannedPlayerCount()); }  
+  
+const state = {  
+  userId: savedUserId,  
+  userName: null,  
+  roomCode: null,  
+  seatedTable: null,  
+  isHost: false,  
+  hands: {},  
+  room: {},  
+  game: {},  
+  latestPlayers: [],  
+  local: {  
+    focusOpen: false,  
+    focusReady: false,  
+    focusCards: [],  
+    focusEls: [],  
+    touchedIndex: new Set(),  
+    shownStartPopForGameId: null,  
+    handledOfferIds: new Set(),  
+    lastDrawPlayedId: null,  
+    selectedOptional: new Set(),  
+    handledAnimIds: new Set(),  
+    tagElById: new Map(),  
+    lastDiscussionId: null,  
+    discussionRAF: null,  
+    discussionEndAt: null,  
+    countRefreshTimer: null,  
+    scheduledRevealAt: null,  
+    tableCardTimer: null,  
+    scheduledTableRevealAt: null,  
+    playingTableId: null,  
+    discussionStartTimer: null,  
+    scheduledDiscussionStartAt: null,  
+    lastFocusCloseId: null,  
+    lastStartSeqId: null,  
+    startSeqTimer: null,  
+    startShuffling: false,  
+  
+    /* =========================  
+       ✅ 本件：執事クリック制御（butlerclick / otherseebutleropen）  
+    ========================= */  
+    butlerClickEnabled: false,  
+  
+    /* =========================  
+       ✅ 本件：スタート押下直後に「場＋山札」を強制非表示にするフラグ  
+       - 1秒待機中に updateDeckUI() が走っても復活しないようガード  
+    ========================= */  
+    hardHideTableAndDeck: false,  
+  }  
+};  
+  
+/* DOM */  
+const mainEl = document.getElementById('main');  
+const joinBox = document.getElementById('joinBox');  
+const inputName = document.getElementById('userName');  
+const inputCode = document.getElementById('roomCode');  
+const btnJoin = document.getElementById('btnJoin');  
+const lobby = document.getElementById('lobby');  
+const roomInfo = document.getElementById('roomInfo');  
+const roomInfoLobby = document.getElementById('roomInfoLobby');  
+const copyLinkBtn = document.getElementById('copyLinkBtn');  
+const hostSelectingPop = document.getElementById('hostSelectingPop');  
+  
+const seatPop = document.getElementById('seatPop');  
+const seatTabs = document.getElementById('seatTabs');  
+const btnSeatCancel = document.getElementById('btnSeatCancel');  
+const seatLabel = seatPop.querySelector('label');  
+  
+const playerCircle = document.getElementById('playerCircle');  
+const myHandEl = document.getElementById('myHand');  
+  
+const kickDialog = document.getElementById('kickDialog');  
+const kickMessage = document.getElementById('kickMessage');  
+const btnKickYes = document.getElementById('btnKickYes');  
+const btnKickNo = document.getElementById('btnKickNo');  
+  
+const hostSettingsBtn = document.getElementById('hostSettingsBtn');  
+const startPop = document.getElementById('startPop');  
+const btnStartPopClose = document.getElementById('btnStartPopClose');  
+const btnGameStart = document.getElementById('btnGameStart');  
+const btnResetRoom = document.getElementById('btnResetRoom');  
+  
+const helpBtn = document.getElementById('helpBtn');  
+const helpBackdrop = document.getElementById('helpBackdrop');  
+const btnHelpClose = document.getElementById('btnHelpClose');  
+const helpBody = document.getElementById('helpBody');  
+  
+const deckEl = document.getElementById('deck');  
+const deckCountEl = document.getElementById('deckCount');  
+const deckUnderCardEl = document.getElementById('deckUnderCard');  
+  
+const deckShuffleLayer = document.getElementById('deckShuffleLayer');  
+let deckShuffleFront = document.getElementById('deckShuffleFront');  
+let deckShuffleBack  = document.getElementById('deckShuffleBack');  
+  
+const butlerKillerCardEl = document.getElementById('butlerKillerCard');  
+const butlerSideCard1El = document.getElementById('butlerSideCard1');  
+const butlerSideCard2El = document.getElementById('butlerSideCard2');  
+  
+const midPop = document.getElementById('midPop');  
+  
+const discussionPop = document.getElementById('discussionPop');  
+const discussionTimerEl = document.getElementById('discussionTimer');  
+const timerTextEl = document.getElementById('timerText');  
+const timerHandG = document.getElementById('timerHandG');  
+  
+const focusBackdrop = document.getElementById('focusBackdrop');  
+const focusStage = document.getElementById('focusStage');  
+  
+const leftWall = document.getElementById('leftWall');  
+  
+/* 画像URL */  
+function cardUrl(name){ return `${encodeURIComponent(name)}.jpg`; }  
+function applyCardFace(el, name){  
+  el.classList.add('card-face');  
+  el.classList.remove('card-back');  
+  el.dataset.label = name;  
+  el.style.backgroundImage = `url("${cardUrl(name)}")`;  
+}  
+function applyCardBack(el){  
+  el.classList.remove('card-face');  
+  el.classList.add('card-back');  
+  el.removeAttribute('data-label');  
+  el.style.backgroundImage = 'var(--backImg)';  
+  el.style.backgroundSize = 'cover';  
+  el.style.backgroundPosition = 'center';  
+  el.style.backgroundRepeat = 'no-repeat';  
+}  
+function ensureReceiveBadge(cardEl, on){  
+  const existing = cardEl.querySelector('.receiveproof-badge');  
+  if (on){  
+    if (!existing){  
+      const b = document.createElement('div');  
+      b.className = 'receiveproof-badge';  
+      cardEl.appendChild(b);  
+    }  
+    cardEl.dataset.received = '1';  
+  } else {  
+    if (existing) existing.remove();  
+    delete cardEl.dataset.received;  
+  }  
+}  
+  
+/* util */  
+function shuffle(arr){  
+  const a = arr.slice();  
+  for(let i=a.length-1;i>0;i--){  
+    const j = Math.floor(Math.random()*(i+1));  
+    [a[i],a[j]]=[a[j],a[i]];  
+  }  
+  return a;  
+}  
+function uidShort(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }  
+function wait(ms){ return new Promise(r=>setTimeout(r, ms)); }  
+  
+function cssMsVar(name){  
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();  
+  if (!v) return 0;  
+  return v.endsWith('ms') ? parseFloat(v) : (v.endsWith('s') ? parseFloat(v)*1000 : parseFloat(v));  
+}  
+  
+/* =========================  
+   ✅ 本件：スタート押下直後に「場のカード＋山札」を全消し → 1秒待機  
+   - 1秒待機中に updateDeckUI() 等が走っても山札が復活しないよう、フラグでガード  
+   - “場のカード”：拡大カード/飛行FX/山札下カード/執事演出カード/自分手札表示も一旦掃除  
+========================= */  
+function hardHideTableAndDeckOn(){  
+  state.local.hardHideTableAndDeck = true;  
+  
+  /* 進行中FXを強制除去 */  
+  document.querySelectorAll('.fx-card, .fx-big').forEach(el => el.remove());  
+  
+  /* 拡大・壁・タイマー等をローカルで強制クローズ */  
+  forceCloseFocusLocal();  
+  stopDiscussionTimer();  
+  
+  /* ポップ類も消す（表示中なら） */  
+  midPop.classList.add('hidden'); midPop.classList.remove('play');  
+  discussionPop.classList.add('hidden'); discussionPop.classList.remove('play');  
+  
+  /* 山札下カード */  
+  deckUnderCardEl.classList.add('hidden');  
+  
+  /* 執事演出カード */  
+  hideButlerKillerCard();  
+  hideButlerSideCards();  
+  
+  /* 山札シャッフル演出レイヤーが出ていたら閉じる */  
+  if (deckShuffleLayer) deckShuffleLayer.classList.add('hidden');  
+  deckEl.classList.remove('is-shuffling');  
+  
+  /* 山札自体を確実に隠す */  
+  deckEl.classList.add('hidden');  
+  deckEl.classList.add('disabled');  
+  
+  /* 自分手札も見た目上クリア（DBはこの後 initGame で空になる） */  
+  myHandEl.innerHTML = '';  
+}  
+function hardHideTableAndDeckOff(){  
+  state.local.hardHideTableAndDeck = false;  
+  /* 従来ロジックに任せて復帰 */  
+  updateDeckUI();  
+  updateDiscussionUI();  
+  renderHands();  
+}  
+  
+/* =========================  
+   ✅ 本件：執事判定＆UI制御（議論開始〜タイマー0）  
+   - 執事だけ、除外2枚（butlerSideCard1/2）を大小アニメ + クリック可能  
+   - クリック(butlerclick)でDBに反映し、他プレイヤーは扇ミニ手札を表表示（otherseebutleropen）  
+========================= */  
+function isMyButler(){  
+  const my = state.hands?.[state.userId];  
+  const cards = (my && Array.isArray(my.cards)) ? my.cards : [];  
+  return cards.includes('執事');  
+}  
+function setButlerExcludedInteractive(on){  
+  state.local.butlerClickEnabled = !!on;  
+  
+  const els = [butlerSideCard1El, butlerSideCard2El].filter(Boolean);  
+  for (const el of els){  
+    el.classList.toggle('pulsing', !!on);  
+    el.classList.toggle('clickable', !!on);  
+  }  
+}  
+function canButlerClickNow(){  
+  if (!state.roomCode) return false;  
+  if (!isMyButler()) return false;  
+  
+  const g = state.game || {};  
+  const disc = g.discussion;  
+  if (!disc || !disc.id || typeof disc.startedAt !== 'number') return false;  
+  
+  const now = Date.now();  
+  const dur = (typeof disc.durationMs === 'number') ? disc.durationMs : 180000;  
+  if (now < disc.startedAt) return false;  
+  if (now >= disc.startedAt + dur) return false;  
+  
+  /* 既に開示済みならクリック不要 */  
+  if (g.butlerOpen && g.butlerOpen[state.userId]) return false;  
+  
+  /* 除外2枚が存在する前提（startSequence.sidePick） */  
+  const sp = g?.startSequence?.sidePick;  
+  if (!sp || !Array.isArray(sp.cards) || sp.cards.length < 2) return false;  
+  
+  /* 右カードが表示されていないなら不可 */  
+  if (butlerSideCard1El?.classList.contains('hidden')) return false;  
+  if (butlerSideCard2El?.classList.contains('hidden')) return false;  
+  
+  return true;  
+}  
+function updateButlerClickWindow(){  
+  setButlerExcludedInteractive(canButlerClickNow());  
+}  
+  
+/* ✅ butlerclick：他プレイヤーに「執事の扇ミニ手札＝表」を見せる */  
+async function butlerclick(){  
+  if (!canButlerClickNow()) return;  
+  
+  const gameRef = ref(db, `rooms/${state.roomCode}/game`);  
+  await runTransaction(gameRef, (g)=>{  
+    if (!g) return g;  
+  
+    const disc = g.discussion;  
+    if (!disc || !disc.id || typeof disc.startedAt !== 'number') return g;  
+    const now = Date.now();  
+    const dur = (typeof disc.durationMs === 'number') ? disc.durationMs : 180000;  
+    if (now < disc.startedAt || now >= disc.startedAt + dur) return g;  
+  
+    const bo = g.butlerOpen || {};  
+    if (bo[state.userId]) return g; // 二重防止  
+  
+    return {  
+      ...g,  
+      butlerOpen: { ...bo, [state.userId]: true },  
+      butlerClick: { id: uidShort(), by: state.userId, at: now }  
+    };  
+  });  
+  
+  /* 自分はクリック済みなので、その場で停止（タイマー0までの条件は満たすが、再クリック防止） */  
+  setButlerExcludedInteractive(false);  
+}  
+window.butlerclick = butlerclick; // デバッグ用に外出し（任意）  
+  
+/* クリック受付：2枚どちらを押しても butlerclick */  
+if (butlerSideCard1El){  
+  butlerSideCard1El.addEventListener('click', async ()=>{  
+    if (!state.local.butlerClickEnabled) return;  
+    await butlerclick();  
+  });  
+}  
+if (butlerSideCard2El){  
+  butlerSideCard2El.addEventListener('click', async ()=>{  
+    if (!state.local.butlerClickEnabled) return;  
+    await butlerclick();  
+  });  
+}  
+  
+/* =========================  
+   ✅ 執事ありスタート：殺人鬼カード表示（左スライド）  
+========================= */  
+function hideButlerKillerCard(){  
+  if (!butlerKillerCardEl) return;  
+  butlerKillerCardEl.classList.add('hidden');  
+  butlerKillerCardEl.classList.remove('visible','slide-left');  
+}  
+async function showButlerKillerCard(slideMs = TIMING.START_BUTLER_KILLER_SLIDE_MS){  
+  if (!butlerKillerCardEl) return;  
+  
+  document.documentElement.style.setProperty('--butlerSlideMs', `${slideMs}ms`);  
+  
+  applyCardFace(butlerKillerCardEl, '殺人鬼');  
+  
+  butlerKillerCardEl.classList.remove('hidden');  
+  butlerKillerCardEl.classList.add('visible');  
+  butlerKillerCardEl.classList.remove('slide-left');  
+  
+  void butlerKillerCardEl.offsetWidth;  
+  butlerKillerCardEl.classList.add('slide-left');  
+  
+  await wait(slideMs);  
+}  
+  
+/* =========================  
+   ✅ 追加：sub1直後の「右に2枚」表示（裏面）  
+========================= */  
+function hideButlerSideCards(){  
+  if (butlerSideCard1El){  
+    butlerSideCard1El.classList.add('hidden');  
+    butlerSideCard1El.classList.remove('visible','slide-right-1','slide-right-2','pulsing','clickable');  
+  }  
+  if (butlerSideCard2El){  
+    butlerSideCard2El.classList.add('hidden');  
+    butlerSideCard2El.classList.remove('visible','slide-right-1','slide-right-2','pulsing','clickable');  
+  }  
+}  
+async function showButlerSideCards(cards, slideMs = TIMING.START_BUTLER_SIDE_SLIDE_MS){  
+  if (!butlerSideCard1El || !butlerSideCard2El) return;  
+  if (!Array.isArray(cards) || cards.length < 2) return;  
+  
+  document.documentElement.style.setProperty('--butlerSideMs', `${slideMs}ms`);  
+  
+  applyCardBack(butlerSideCard1El);  
+  applyCardBack(butlerSideCard2El);  
+  
+  butlerSideCard1El.classList.remove('hidden');  
+  butlerSideCard2El.classList.remove('hidden');  
+  
+  butlerSideCard1El.classList.add('visible');  
+  butlerSideCard2El.classList.add('visible');  
+  
+  butlerSideCard1El.classList.remove('slide-right-1','slide-right-2','pulsing','clickable');  
+  butlerSideCard2El.classList.remove('slide-right-1','slide-right-2','pulsing','clickable');  
+  
+  void butlerSideCard1El.offsetWidth;  
+  
+  butlerSideCard1El.classList.add('slide-right-1');  
+  butlerSideCard2El.classList.add('slide-right-2');  
+  
+  await wait(slideMs);  
+}  
+  
+/* ✅ sub1後：殺人鬼カードを裏向きにして山札へアニメ移動で戻す */  
+function rectCenter(r){ return { x: r.left + r.width/2, y: r.top + r.height/2 }; }  
+function pointRect(x,y){ return { left:x, top:y, width:0, height:0 }; }  
+  
+function getDeckRect(){  
+  const r = deckEl.getBoundingClientRect();  
+  if (!r || r.width === 0 || r.height === 0){  
+    const pc = playerCircle.getBoundingClientRect();  
+    const cx = pc.left + pc.width/2;  
+    const cy = pc.top + pc.height/2;  
+    return { left: cx, top: cy, width: 0, height: 0 };  
+  }  
+  return r;  
+}  
+  
+async function returnButlerKillerCardToDeck(returnMs = TIMING.START_BUTLER_KILLER_RETURN_MS){  
+  if (!butlerKillerCardEl) return;  
+  
+  const visibleNow = !butlerKillerCardEl.classList.contains('hidden');  
+  if (!visibleNow) return;  
+  
+  applyCardBack(butlerKillerCardEl);  
+  await wait(80);  
+  
+  const startRect = butlerKillerCardEl.getBoundingClientRect();  
+  const deckRect  = getDeckRect();  
+  
+  const fx = document.createElement('div');  
+  fx.className = 'fx-card';  
+  applyCardBack(fx);  
+  document.body.appendChild(fx);  
+  
+  const s = rectCenter(startRect);  
+  const e = rectCenter(deckRect);  
+  
+  const w = fx.getBoundingClientRect().width;  
+  const h = fx.getBoundingClientRect().height;  
+  fx.style.left = (s.x - w/2) + 'px';  
+  fx.style.top  = (s.y - h/2) + 'px';  
+  
+  hideButlerKillerCard();  
+  
+  const dx = (e.x - s.x);  
+  const dy = (e.y - s.y);  
+  
+  const anim = fx.animate([  
+    { transform: 'scale(1) translate3d(0px,0px,0)', opacity: 1 },  
+    { transform: `scale(.98) translate3d(${dx}px, ${dy}px, 0)`, opacity: 1 },  
+  ], { duration: returnMs, easing: 'cubic-bezier(.22,.84,.44,1)', fill:'forwards' });  
+  
+  await anim.finished.catch(()=>{});  
+  fx.remove();  
+  
+  hideButlerKillerCard();  
+}  
+  
+/* =========================  
+   ✅ sub1直後：殺人鬼を除く2枚をDB上のdeckから抜いて確定（全端末一致）  
+========================= */  
+async function ensureButlerSidePickAndGet(seqId){  
+  if (!state.roomCode) return null;  
+  const gameRef = ref(db, `rooms/${state.roomCode}/game`);  
+  
+  const res = await runTransaction(gameRef, (g)=>{  
+    if (!g) return g;  
+    if (!g.startSequence || g.startSequence.id !== seqId) return g;  
+    if (g.startSequence.sidePick && g.startSequence.sidePick.id) return g;  
+    if (!Array.isArray(g.deck)) return g;  
+  
+    const deck = g.deck.slice();  
+    const candidates = [];  
+    for (let i=0;i<deck.length;i++){  
+      if (deck[i] !== '殺人鬼') candidates.push(i);  
+    }  
+    if (candidates.length < 2){  
+      const now = Date.now();  
+      return {  
+        ...g,  
+        startSequence: {  
+          ...g.startSequence,  
+          sidePick: { id: uidShort(), cards: [], at: now }  
+        }  
+      };  
+    }  
+  
+    const idx = shuffle(candidates).slice(0,2).sort((a,b)=>b-a);  
+    const picked = [deck[idx[0]], deck[idx[1]]];  
+    deck.splice(idx[0], 1);  
+    deck.splice(idx[1], 1);  
+  
+    const now = Date.now();  
+    return {  
+      ...g,  
+      deck,  
+      startSequence: {  
+        ...g.startSequence,  
+        sidePick: { id: uidShort(), cards: picked, at: now }  
+      }  
+    };  
+  });  
+  
+  try{  
+    const g2 = res?.snapshot?.val?.();  
+    return g2?.startSequence?.sidePick || null;  
+  } catch {  
+    return null;  
+  }  
+}  
+  
+async function waitForSidePick(seqId, timeoutMs = 2500){  
+  const end = Date.now() + timeoutMs;  
+  while (Date.now() < end){  
+    const ss = state.game?.startSequence;  
+    if (ss && ss.id === seqId && ss.sidePick && ss.sidePick.id) return ss.sidePick;  
+    await wait(50);  
+  }  
+  return null;  
+}  
+  
+/* 山札2枚シャッフル */  
+async function playDeckShuffleLocal(totalMs = TIMING.START_SHUFFLE_MS){  
+  if (!deckShuffleLayer) return;  
+  
+  deckEl.classList.add('is-shuffling');  
+  deckShuffleLayer.classList.remove('hidden');  
+  
+  let front = deckShuffleFront;  
+  let back  = deckShuffleBack;  
+  
+  const DUR_OUT = cssMsVar('--sDurOut');  
+  const DUR_IN  = cssMsVar('--sDurIn');  
+  
+  const targetPause = Math.max(0, Math.round((totalMs / 3) - (DUR_OUT + DUR_IN)));  
+  document.documentElement.style.setProperty('--sPause', `${targetPause}ms`);  
+  const PAUSE2 = cssMsVar('--sPause');  
+  
+  function normalize(){  
+    front.classList.remove('movingOut','movingIn');  
+    back.classList.remove('movingOut','movingIn');  
+    if (!front.classList.contains('front')){  
+      front.classList.remove('back');  
+      front.classList.add('front');  
+    }  
+    if (!back.classList.contains('back')){  
+      back.classList.remove('front');  
+      back.classList.add('back');  
+    }  
+  }  
+  function swapLayers(){  
+    front.classList.remove('front');  
+    front.classList.add('back');  
+    back.classList.remove('back');  
+    back.classList.add('front');  
+    const tmp = front; front = back; back = tmp;  
+  }  
+  
+  normalize();  
+  
+  for(let i=0;i<3;i++){  
+    front.classList.remove('movingIn');  
+    void front.offsetWidth;  
+    front.classList.add('movingOut');  
+    await wait(DUR_OUT);  
+  
+    front.classList.remove('movingOut');  
+    swapLayers();  
+  
+    back.classList.remove('movingOut');  
+    void back.offsetWidth;  
+    back.classList.add('movingIn');  
+    await wait(DUR_IN);  
+  
+    back.classList.remove('movingIn');  
+    await wait(PAUSE2);  
+  }  
+  
+  deckShuffleLayer.classList.add('hidden');  
+  deckEl.classList.remove('is-shuffling');  
+}  
+  
+/* ✅ シャッフルsub1 */  
+async function playDeckShuffleSub1Local(totalMs = TIMING.START_SHUFFLE_SUB1_MS){  
+  await playDeckShuffleLocal(totalMs);  
+}  
+  
+/* 次手番 */  
+function getNextPlayerId(game){  
+  if (!game || !Array.isArray(game.turnOrder) || game.turnOrder.length===0) return null;  
+  const n = game.turnOrder.length;  
+  const idx = (game.turnIndex ?? 0) % n;  
+  return game.turnOrder[idx];  
+}  
+function getAfterNextPlayerId(game){  
+  if (!game || !Array.isArray(game.turnOrder) || game.turnOrder.length===0) return null;  
+  const n = game.turnOrder.length;  
+  const idx = ((game.turnIndex ?? 0) + 1) % n;  
+  return game.turnOrder[idx];  
+}  
+  
+function buildDraw2CountTimes(now){  
+  const t1 = now + TIMING.DEAL_FLY_MS + TIMING.DRAW2_COUNT1_PAD_MS;  
+  const t2 = now + TIMING.DEAL_FLY_MS*2 + TIMING.DRAW2_COUNT2_PAD_MS;  
+  return { count1At: t1, revealAt: t2 };  
+}  
+  
+async function autoDealTwoIfNeeded(startSeqId){  
+  if (!state.roomCode) return;  
+  const gameRef = ref(db, `rooms/${state.roomCode}/game`);  
+  
+  await runTransaction(gameRef, (g)=>{  
+    if (!g) return g;  
+    if (!g.startSequence || g.startSequence.id !== startSeqId) return g;  
+    if (g.startSequence.autoDealt === true) return g;  
+  
+    const currentPlayer = getNextPlayerId(g);  
+    if (currentPlayer !== state.userId) return g;  
+  
+    if (g.currentDraw && g.currentDraw.playerId) {  
+      return { ...g, startSequence: { ...g.startSequence, autoDealt:true, autoDealtAt: Date.now() } };  
+    }  
+    if (!Array.isArray(g.deck) || g.deck.length < 2) {  
+      return { ...g, startSequence: { ...g.startSequence, autoDealt:true, autoDealtAt: Date.now() } };  
+    }  
+  
+    const now = Date.now();  
+    const deck = g.deck.slice();  
+    const c1 = deck.shift();  
+    const c2 = deck.shift();  
+  
+    const t = buildDraw2CountTimes(now);  
+  
+    return {  
+      ...g,  
+      deck,  
+      currentDraw: {  
+        id: uidShort(),  
+        kind: 'deck',  
+        playerId: state.userId,  
+        cards: [c1, c2],  
+        startedAt: now,  
+        count1At: t.count1At,  
+        revealAt: t.revealAt  
+      },  
+      anim: { id: uidShort(), type:'draw2', to: state.userId },  
+      startSequence: { ...g.startSequence, autoDealt:true, autoDealtAt: now }  
+    };  
+  });  
+}  
+  
+function maybeHandleStartSequence(g){  
+  const seq = g?.startSequence;  
+  if (!seq || !seq.id || typeof seq.startedAt !== 'number') return;  
+  
+  if (state.local.lastStartSeqId === seq.id) return;  
+  state.local.lastStartSeqId = seq.id;  
+  
+  if (state.local.startSeqTimer){  
+    clearTimeout(state.local.startSeqTimer);  
+    state.local.startSeqTimer = null;  
+  }  
+  
+  const mode = seq.mode || 'normal';  
+  const shuffleMs = (typeof seq.shuffleMs === 'number') ? seq.shuffleMs : TIMING.START_SHUFFLE_MS;  
+  
+  const sub1Ms  = (typeof seq.sub1Ms === 'number') ? seq.sub1Ms : TIMING.START_SHUFFLE_SUB1_MS;  
+  const slideMs = (typeof seq.slideMs === 'number') ? seq.slideMs : TIMING.START_BUTLER_KILLER_SLIDE_MS;  
+  const holdMs  = (typeof seq.holdMs === 'number') ? seq.holdMs : TIMING.START_BUTLER_KILLER_HOLD_MS;  
+  
+  const delay = Math.max(0, seq.startedAt - Date.now());  
+  
+  state.local.startSeqTimer = setTimeout(async ()=>{  
+    state.local.startShuffling = true;  
+    updateDeckUI();  
+  
+    hideButlerKillerCard();  
+    hideButlerSideCards();  
+  
+    if (mode === 'butler'){  
+      await showButlerKillerCard(slideMs);  
+      await wait(holdMs);  
+  
+      await playDeckShuffleSub1Local(sub1Ms);  
+  
+      let pick = null;  
+      if (state.isHost){  
+        pick = await ensureButlerSidePickAndGet(seq.id);  
+      } else {  
+        pick = await waitForSidePick(seq.id);  
+      }  
+      if (pick && Array.isArray(pick.cards) && pick.cards.length >= 2){  
+        await showButlerSideCards(pick.cards, TIMING.START_BUTLER_SIDE_SLIDE_MS);  
+      } else {  
+        hideButlerSideCards();  
+      }  
+  
+      await wait(TIMING.START_BUTLER_BEFORE_RETURN_WAIT_MS);  
+      await returnButlerKillerCardToDeck(TIMING.START_BUTLER_KILLER_RETURN_MS);  
+  
+      if (TIMING.START_BUTLER_AFTER_RETURN_WAIT_MS > 0){  
+        await wait(TIMING.START_BUTLER_AFTER_RETURN_WAIT_MS);  
+      }  
+      await playDeckShuffleLocal(shuffleMs);  
+    } else {  
+      await playDeckShuffleLocal(shuffleMs);  
+    }  
+  
+    state.local.startShuffling = false;  
+    updateDeckUI();  
+  
+    if (g.startPlayerId === state.userId){  
+      await autoDealTwoIfNeeded(seq.id);  
+    }  
+  }, delay);  
+}  
+  
+/* 拡大閉じ */  
+function closeFocus(){  
+  state.local.focusOpen = false;  
+  state.local.focusReady = false;  
+  state.local.focusCards = [];  
+  state.local.focusEls = [];  
+  state.local.touchedIndex = new Set();  
+  focusBackdrop.classList.add('hidden');  
+  focusStage.innerHTML = '';  
+  leftWall.classList.remove('on');  
+}  
+function forceCloseFocusLocal(){  
+  if (state.local.focusOpen){  
+    closeFocus();  
+  } else {  
+    focusBackdrop.classList.add('hidden');  
+    focusStage.innerHTML = '';  
+    leftWall.classList.remove('on');  
+  }  
+}  
+async function broadcastCloseFocus(reason='host'){  
+  if (!state.roomCode) return;  
+  const id = uidShort();  
+  await update(ref(db, `rooms/${state.roomCode}`), {  
+    focusClose: { id, at: Date.now(), by: state.userId, reason }  
+  });  
+  state.local.lastFocusCloseId = id;  
+  forceCloseFocusLocal();  
+}  
+function subscribeFocusClose(){  
+  if (!state.roomCode) return;  
+  const focusRef = ref(db, `rooms/${state.roomCode}/focusClose`);  
+  onValue(focusRef, (snap)=>{  
+    const v = snap.val();  
+    if (!v || !v.id) return;  
+    if (state.local.lastFocusCloseId === v.id) return;  
+    state.local.lastFocusCloseId = v.id;  
+    forceCloseFocusLocal();  
+  });  
+}  
+  
+/* タイマー掃除 */  
+function clearLocalTimers(){  
+  if (state.local.countRefreshTimer){ clearTimeout(state.local.countRefreshTimer); state.local.countRefreshTimer = null; }  
+  state.local.scheduledRevealAt = null;  
+  
+  if (state.local.tableCardTimer){ clearTimeout(state.local.tableCardTimer); state.local.tableCardTimer = null; }  
+  state.local.scheduledTableRevealAt = null;  
+  
+  if (state.local.discussionStartTimer){ clearTimeout(state.local.discussionStartTimer); state.local.discussionStartTimer = null; }  
+  state.local.scheduledDiscussionStartAt = null;  
+  
+  state.local.playingTableId = null;  
+  
+  if (state.local.startSeqTimer){ clearTimeout(state.local.startSeqTimer); state.local.startSeqTimer = null; }  
+  state.local.startShuffling = false;  
+  
+  /* ✅ 執事クリックも強制オフ */  
+  setButlerExcludedInteractive(false);  
+}  
+async function preStartOrResetCleanup(kind){  
+  await broadcastCloseFocus(kind);  
+  stopDiscussionTimer();  
+  deckUnderCardEl.classList.add('hidden');  
+  clearLocalTimers();  
+  
+  hideButlerKillerCard();  
+  hideButlerSideCards();  
+  
+  state.local.handledOfferIds = new Set();  
+  state.local.lastDrawPlayedId = null;  
+  state.local.handledAnimIds = new Set();  
+  state.local.lastDiscussionId = null;  
+}  
+  
+let hostBusy = false;  
+  
+/* =========================  
+   ✅ カウント更新タイマー  
+========================= */  
+function scheduleCountRefresh(){  
+  if (state.local.countRefreshTimer){  
+    clearTimeout(state.local.countRefreshTimer);  
+    state.local.countRefreshTimer = null;  
+  }  
+  state.local.scheduledRevealAt = null;  
+  
+  const g = state.game || {};  
+  const cd = g.currentDraw;  
+  if (!cd) return;  
+  
+  const now = Date.now();  
+  const times = [];  
+  
+  if (typeof cd.count1At === 'number' && cd.count1At > now) times.push(cd.count1At);  
+  if (typeof cd.revealAt === 'number' && cd.revealAt > now) times.push(cd.revealAt);  
+  
+  if (!times.length) return;  
+  
+  const nextAt = Math.min(...times);  
+  const ms = Math.min(60_000, Math.max(30, nextAt - now + 60));  
+  state.local.scheduledRevealAt = nextAt;  
+  
+  state.local.countRefreshTimer = setTimeout(() => {  
+    renderHands();  
+    scheduleCountRefresh();  
+  }, ms);  
+}  
+  
+/* 山札下カード更新 */  
+function scheduleTableRevealRefresh(){  
+  if (state.local.tableCardTimer){  
+    clearTimeout(state.local.tableCardTimer);  
+    state.local.tableCardTimer = null;  
+  }  
+  state.local.scheduledTableRevealAt = null;  
+  
+  const g = state.game || {};  
+  const tc = g.tableCard;  
+  if (!tc || !tc.id) return;  
+  
+  const now = Date.now();  
+  if (tc.revealed === true) return;  
+  
+  const revealAt = (typeof tc.revealAt === 'number') ? tc.revealAt : null;  
+  if (!revealAt) return;  
+  if (now >= revealAt) return;  
+  
+  const ms = Math.min(60_000, Math.max(20, revealAt - now + 20));  
+  state.local.scheduledTableRevealAt = revealAt;  
+  
+  state.local.tableCardTimer = setTimeout(() => {  
+    updateDiscussionUI();  
+    scheduleTableRevealRefresh();  
+  }, ms);  
+}  
+  
+/* 議論開始更新 */  
+function scheduleDiscussionStartRefresh(){  
+  if (state.local.discussionStartTimer){  
+    clearTimeout(state.local.discussionStartTimer);  
+    state.local.discussionStartTimer = null;  
+  }  
+  state.local.scheduledDiscussionStartAt = null;  
+  
+  const g = state.game || {};  
+  const disc = g?.discussion;  
+  if (!disc || !disc.id) return;  
+  
+  const startedAt = (typeof disc.startedAt === 'number') ? disc.startedAt : null;  
+  if (!startedAt) return;  
+  
+  const now = Date.now();  
+  if (now >= startedAt) return;  
+  
+  const ms = Math.min(60_000, Math.max(20, startedAt - now + 20));  
+  state.local.scheduledDiscussionStartAt = startedAt;  
+  
+  state.local.discussionStartTimer = setTimeout(() => {  
+    updateDiscussionUI();  
+    scheduleDiscussionStartRefresh();  
+  }, ms);  
+}  
+  
+/* ポップ */  
+function showMidPop(text){  
+  midPop.textContent = text;  
+  midPop.classList.remove('hidden');  
+  midPop.classList.remove('play');  
+  void midPop.offsetWidth;  
+  midPop.classList.add('play');  
+  setTimeout(()=> {  
+    midPop.classList.add('hidden');  
+    midPop.classList.remove('play');  
+  }, 1100);  
+}  
+function showDiscussionPop(){  
+  discussionPop.classList.remove('hidden');  
+  discussionPop.classList.remove('play');  
+  void discussionPop.offsetWidth;  
+  discussionPop.classList.add('play');  
+  setTimeout(()=> {  
+    discussionPop.classList.add('hidden');  
+    discussionPop.classList.remove('play');  
+  }, 1100);  
+}  
+  
+/* 針タイマー */  
+function fmtMMSS(ms){  
+  const s = Math.max(0, Math.ceil(ms/1000));  
+  const m = Math.floor(s/60);  
+  const ss = String(s%60).padStart(2,'0');  
+  return `${m}:${ss}`;  
+}  
+function stopDiscussionTimer(){  
+  if (state.local.discussionRAF){  
+    cancelAnimationFrame(state.local.discussionRAF);  
+    state.local.discussionRAF = null;  
+  }  
+  state.local.discussionEndAt = null;  
+  discussionTimerEl.classList.add('hidden');  
+  
+  /* ✅ タイマー停止＝クリック窓も終了 */  
+  setButlerExcludedInteractive(false);  
+}  
+function startDiscussionTimer(startedAt, durationMs=180000){  
+  const endAt = startedAt + durationMs;  
+  
+  if (state.local.discussionRAF){  
+    cancelAnimationFrame(state.local.discussionRAF);  
+    state.local.discussionRAF = null;  
+  }  
+  state.local.discussionEndAt = endAt;  
+  
+  discussionTimerEl.classList.remove('hidden');  
+  
+  let lastTick = 0;  
+  const loop = (t)=>{  
+    const now = Date.now();  
+    const remain = Math.max(0, endAt - now);  
+  
+    if (t - lastTick > 90){  
+      lastTick = t;  
+      timerTextEl.textContent = fmtMMSS(remain);  
+  
+      const progress = Math.min(1, Math.max(0, (durationMs - remain) / durationMs));  
+      const deg = progress * 360;  
+      timerHandG.style.transform = `rotate(${deg}deg)`;  
+    }  
+  
+    if (remain <= 0){  
+      discussionTimerEl.classList.add('hidden');  
+      state.local.discussionRAF = null;  
+  
+      /* ✅ 0になった瞬間に停止 */  
+      setButlerExcludedInteractive(false);  
+      return;  
+    }  
+  
+    state.local.discussionRAF = requestAnimationFrame(loop);  
+  };  
+  
+  state.local.discussionRAF = requestAnimationFrame(loop);  
+}  
+  
+/* 位置取得 */  
+function pointRectFromCenter(c){ return pointRect(c.x, c.y); }  
+  
+function getDeckUnderTargetRect(){  
+  const d = getDeckRect();  
+  const c = rectCenter(d);  
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--deckUnderOffset');  
+  const off = Number.parseFloat(raw) || 72;  
+  return pointRect(c.x, c.y + off);  
+}  
+  
+function getTagRectByPlayerId(pid){  
+  const el = state.local.tagElById.get(pid);  
+  if (!el) return null;  
+  return el.getBoundingClientRect();  
+}  
+function getFanTargetRect(pid){  
+  const tr = getTagRectByPlayerId(pid);  
+  if (!tr) return null;  
+  const c = rectCenter(tr);  
+  return pointRect(c.x, c.y + 30);  
+}  
+  
+/* 飛行 */  
+async function flyFxSmall({from, to, face='back', label=null, delay=0, duration=520}){  
+  const el = document.createElement('div');  
+  el.className = 'fx-card';  
+  if (face === 'back') applyCardBack(el);  
+  else applyCardFace(el, label || '');  
+  document.body.appendChild(el);  
+  
+  const s = rectCenter(from);  
+  const e = rectCenter(to);  
+  
+  const w = el.getBoundingClientRect().width;  
+  const h = el.getBoundingClientRect().height;  
+  el.style.left = (s.x - w/2) + 'px';  
+  el.style.top  = (s.y - h/2) + 'px';  
+  
+  if (delay) await wait(delay);  
+  
+  const dx = (e.x - s.x);  
+  const dy = (e.y - s.y);  
+  
+  const anim = el.animate([  
+    { transform: 'scale(1) translate3d(0px,0px,0)', opacity: 1 },  
+    { transform: `scale(.98) translate3d(${dx}px, ${dy}px, 0)`, opacity: 1 },  
+  ], { duration, easing: 'cubic-bezier(.22,.84,.44,1)', fill:'forwards' });  
+  
+  await anim.finished.catch(()=>{});  
+  el.remove();  
+}  
+  
+async function flyFxBig({  
+  from,  
+  toPoint,  
+  face='back',  
+  label=null,  
+  delay=0,  
+  duration=560,  
+  scaleTo=1.0,  
+  receivedBadge=false,  
+  keep=false,  
+}){  
+  const el = document.createElement('div');  
+  el.className = 'fx-big';  
+  if (face === 'back') applyCardBack(el);  
+  else applyCardFace(el, label || '');  
+  
+  if (receivedBadge){  
+    const b = document.createElement('div');  
+    b.className = 'fx-received-badge';  
+    el.appendChild(b);  
+  }  
+  
+  document.body.appendChild(el);  
+  
+  const s = rectCenter(from);  
+  const e = toPoint;  
+  
+  const w = el.getBoundingClientRect().width;  
+  const h = el.getBoundingClientRect().height;  
+  el.style.left = (s.x - w/2) + 'px';  
+  el.style.top  = (s.y - h/2) + 'px';  
+  
+  if (delay) await wait(delay);  
+  
+  const dx = (e.x - s.x);  
+  const dy = (e.y - s.y);  
+  
+  const anim = el.animate([  
+    { transform:'scale(1) translate3d(0px,0px,0)', opacity:1 },  
+    { transform:`scale(${scaleTo}) translate3d(${dx}px, ${dy}px, 0)`, opacity:1 }  
+  ], { duration, easing:'cubic-bezier(.22,.84,.44,1)', fill:'forwards' });  
+  
+  await anim.finished.catch(()=>{});  
+  
+  if (keep) return el;  
+  el.remove();  
+}  
+  
+/* 拡大 */  
+function openFocusTwo(cards){  
+  state.local.focusOpen = true;  
+  state.local.focusReady = true;  
+  state.local.focusCards = cards.slice(0,2);  
+  state.local.touchedIndex = new Set();  
+  state.local.focusEls = [];  
+  
+  focusStage.innerHTML = '';  
+  focusBackdrop.classList.remove('hidden');  
+  
+  const [c1,c2] = state.local.focusCards;  
+  
+  const card1 = document.createElement('div');  
+  card1.className = 'big-card';  
+  card1.dataset.idx = '0';  
+  applyCardFace(card1, c1);  
+  ensureReceiveBadge(card1, false);  
+  
+  const card2 = document.createElement('div');  
+  card2.className = 'big-card';  
+  card2.dataset.idx = '1';  
+  applyCardFace(card2, c2);  
+  ensureReceiveBadge(card2, false);  
+  
+  focusStage.appendChild(card1);  
+  focusStage.appendChild(card2);  
+  
+  state.local.focusEls = [card1, card2];  
+  
+  enableDrag(card1);  
+  enableDrag(card2);  
+}  
+function openFocusSkeleton(){  
+  state.local.focusOpen = true;  
+  state.local.focusReady = false;  
+  state.local.focusCards = [];  
+  state.local.touchedIndex = new Set();  
+  state.local.focusEls = [];  
+  
+  focusStage.innerHTML = '';  
+  focusBackdrop.classList.remove('hidden');  
+  
+  const left = document.createElement('div');  
+  left.className = 'big-card';  
+  left.dataset.idx = '0';  
+  applyCardBack(left);  
+  left.style.opacity = '0';  
+  ensureReceiveBadge(left, false);  
+  
+  const right = document.createElement('div');  
+  right.className = 'big-card';  
+  right.dataset.idx = '1';  
+  applyCardBack(right);  
+  right.style.opacity = '0';  
+  ensureReceiveBadge(right, false);  
+  
+  focusStage.appendChild(left);  
+  focusStage.appendChild(right);  
+  
+  state.local.focusEls = [left, right];  
+  
+  enableDrag(left);  
+  enableDrag(right);  
+}  
+function getFocusSlotCenter(idx){  
+  const el = state.local.focusEls?.[idx];  
+  if (!el) return { x: window.innerWidth/2, y: window.innerHeight/2 };  
+  const r = el.getBoundingClientRect();  
+  return { x: r.left + r.width/2, y: r.top + r.height/2 };  
+}  
+function setFocusSlot(idx, face, label, received=false){  
+  const el = state.local.focusEls?.[idx];  
+  if (!el) return;  
+  if (face === 'back') applyCardBack(el);  
+  else applyCardFace(el, label || '');  
+  el.style.opacity = '1';  
+  ensureReceiveBadge(el, !!received);  
+}  
+  
+/* ドラッグ */  
+function enableDrag(cardEl){  
+  const DRAG_THRESHOLD = 8;  
+  const WALL_THRESH = 18;  
+  
+  let down = null;  
+  
+  function setWall(on){  
+    leftWall.classList.toggle('on', !!on);  
+    cardEl.classList.toggle('near-wall', !!on);  
+  }  
+  
+  cardEl.addEventListener('pointerdown', (e)=>{  
+    if (!state.local.focusReady) return;  
+    if (cardEl.classList.contains('card-back')) return;  
+  
+    e.preventDefault();  
+    cardEl.setPointerCapture(e.pointerId);  
+  
+    const rect = cardEl.getBoundingClientRect();  
+    down = {  
+      pointerId: e.pointerId,  
+      startX: e.clientX,  
+      startY: e.clientY,  
+      offX: e.clientX - rect.left,  
+      offY: e.clientY - rect.top,  
+      started: false,  
+      fixed: false,  
+    };  
+  
+    state.local.touchedIndex.add(Number(cardEl.dataset.idx));  
+  });  
+  
+  cardEl.addEventListener('pointermove', (e)=>{  
+    if (!down || down.pointerId !== e.pointerId) return;  
+  
+    const dx = e.clientX - down.startX;  
+    const dy = e.clientY - down.startY;  
+    const dist = Math.hypot(dx, dy);  
+  
+    if (!down.started){  
+      if (dist < DRAG_THRESHOLD) return;  
+      down.started = true;  
+  
+      cardEl.classList.add('dragging');  
+  
+      const r = cardEl.getBoundingClientRect();  
+      cardEl.style.position = 'fixed';  
+      cardEl.style.left = r.left + 'px';  
+      cardEl.style.top  = r.top  + 'px';  
+      cardEl.style.margin = '0';  
+      down.fixed = true;  
+    }  
+  
+    const x = e.clientX - down.offX;  
+    const y = e.clientY - down.offY;  
+    cardEl.style.left = x + 'px';  
+    cardEl.style.top  = y + 'px';  
+  
+    const rect = cardEl.getBoundingClientRect();  
+    const touching = rect.left <= WALL_THRESH;  
+    setWall(touching);  
+  });  
+  
+  cardEl.addEventListener('pointerup', async (e)=>{  
+    if (!down || down.pointerId !== e.pointerId) return;  
+    try{ cardEl.releasePointerCapture(e.pointerId); }catch{}  
+  
+    const wasDrag = down.started;  
+    const wasFixed = down.fixed;  
+    down = null;  
+  
+    cardEl.classList.remove('dragging');  
+  
+    if (!wasDrag){  
+      setWall(false);  
+      return;  
+    }  
+  
+    const rect = cardEl.getBoundingClientRect();  
+    const dropLeft = rect.left <= WALL_THRESH;  
+  
+    if (dropLeft){  
+      setWall(false);  
+  
+      const droppedIdx = Number(cardEl.dataset.idx);  
+      const keepIdx = droppedIdx === 0 ? 1 : 0;  
+  
+      const droppedCard = state.local.focusCards[droppedIdx];  
+      const keptCard = state.local.focusCards[keepIdx];  
+  
+      await commitKeepAndPass(keptCard, droppedCard);  
+  
+      closeFocus();  
+      return;  
+    }  
+  
+    setWall(false);  
+  
+    if (wasFixed){  
+      const idx = Number(cardEl.dataset.idx);  
+      const cardName = state.local.focusCards[idx];  
+      const wasReceived = (cardEl.dataset.received === '1');  
+      cardEl.remove();  
+  
+      const restored = document.createElement('div');  
+      restored.className = 'big-card';  
+      restored.dataset.idx = String(idx);  
+      applyCardFace(restored, cardName);  
+      ensureReceiveBadge(restored, wasReceived);  
+      focusStage.appendChild(restored);  
+      enableDrag(restored);  
+  
+      const els = [...focusStage.querySelectorAll('.big-card')];  
+      if (els.length === 2){  
+        state.local.focusEls = els[0].dataset.idx === '0' ? [els[0], els[1]] : [els[1], els[0]];  
+      }  
+    }  
+  });  
+  
+  cardEl.addEventListener('pointercancel', ()=>{  
+    down = null;  
+    cardEl.classList.remove('dragging');  
+    setWall(false);  
+  });  
+}  
+  
+/* keep & pass */  
+async function commitKeepAndPass(keptCard, passedCard){  
+  const roomRef = ref(db, `rooms/${state.roomCode}`);  
+  await runTransaction(roomRef, (r)=>{  
+    if (!r) return r;  
+  
+    const g = r.game;  
+    if (!g) return r;  
+  
+    const currentPlayer = getNextPlayerId(g);  
+    if (currentPlayer !== state.userId) return r;  
+  
+    const nextPlayer = getAfterNextPlayerId(g);  
+    if (!nextPlayer) return r;  
+  
+    const offerId = uidShort();  
+    const n = g.turnOrder?.length || 1;  
+    const nextIndex = ((g.turnIndex ?? 0) + 1) % n;  
+  
+    const isLastBeforeStart = !!g.startPlayerId && (nextPlayer === g.startPlayerId);  
+  
+    let discussion = g.discussion || null;  
+    let tableCard = g.tableCard || null;  
+  
+    if (isLastBeforeStart){  
+      const now = Date.now();  
+      const discId = uidShort();  
+      const tableRevealAt = now + TIMING.TABLE_FLY_MS;  
+      const discussionStartedAt = tableRevealAt + TIMING.DISCUSSION_START_DELAY_MS;  
+  
+      discussion = { id: discId, startedAt: discussionStartedAt, durationMs: 180000 };  
+      tableCard  = { id: discId, placedAt: now, revealAt: tableRevealAt };  
+    }  
+  
+    const hands = r.hands || {};  
+    const my = hands[state.userId] || {};  
+    const cards = Array.isArray(my.cards) ? my.cards.slice() : [];  
+    cards.push(keptCard);  
+    hands[state.userId] = { cards };  
+  
+    const newGame = {  
+      ...g,  
+      turnIndex: nextIndex,  
+      currentDraw: null,  
+      offer: isLastBeforeStart ? null : { id: offerId, from: state.userId, to: nextPlayer, card: passedCard },  
+      discussion: discussion,  
+      tableCard: tableCard,  
+      anim: {  
+        id: uidShort(),  
+        type: isLastBeforeStart ? 'table' : 'pass',  
+        from: state.userId,  
+        to: isLastBeforeStart ? null : nextPlayer,  
+        discussionStart: isLastBeforeStart,  
+        discussionId: discussion?.id || null,  
+        tableId: isLastBeforeStart ? (tableCard?.id || null) : null,  
+        discussionStartedAt: isLastBeforeStart ? (discussion?.startedAt || null) : null,  
+      }  
+    };  
+  
+    return { ...r, hands, game: newGame };  
+  });  
+}  
+  
+/* DB：2枚引く */  
+async function drawTwoFromDeck(){  
+  const gameRef = ref(db, `rooms/${state.roomCode}/game`);  
+  await runTransaction(gameRef, (g)=>{  
+    if (!g) return g;  
+  
+    const currentPlayer = getNextPlayerId(g);  
+    if (currentPlayer !== state.userId) return g;  
+  
+    if (g.currentDraw && g.currentDraw.playerId) return g;  
+    if (!Array.isArray(g.deck) || g.deck.length < 2) return g;  
+  
+    const now = Date.now();  
+    const deck = g.deck.slice();  
+    const c1 = deck.shift();  
+    const c2 = deck.shift();  
+  
+    const t = buildDraw2CountTimes(now);  
+  
+    return {  
+      ...g,  
+      deck,  
+      currentDraw: {  
+        id: uidShort(),  
+        kind: 'deck',  
+        playerId: state.userId,  
+        cards: [c1,c2],  
+        startedAt: now,  
+        count1At: t.count1At,  
+        revealAt: t.revealAt  
+      },  
+      anim: { id: uidShort(), type:'draw2', to: state.userId }  
+    };  
+  });  
+}  
+  
+/* offer受領→1枚ドロー */  
+async function acceptOfferAndDrawOne(offerId){  
+  const gameRef = ref(db, `rooms/${state.roomCode}/game`);  
+  await runTransaction(gameRef, (g)=>{  
+    if (!g) return g;  
+    if (!g.offer) return g;  
+    if (g.offer.id !== offerId) return g;  
+    if (g.offer.to !== state.userId) return g;  
+  
+    if (g.currentDraw && g.currentDraw.playerId) return g;  
+  
+    if (!Array.isArray(g.deck) || g.deck.length < 1) {  
+      return { ...g, offer: null };  
+    }  
+  
+    const now = Date.now();  
+    const deck = g.deck.slice();  
+    const drawn = deck.shift();  
+  
+    const fromId = g.offer.from;  
+    const passed = g.offer.card;  
+  
+    return {  
+      ...g,  
+      deck,  
+      offer: null,  
+      currentDraw: {  
+        id: uidShort(),  
+        kind: 'offer',  
+        playerId: state.userId,  
+        cards: [passed, drawn],  
+        from: fromId,  
+        offerId: offerId,  
+        startedAt: now,  
+        revealAt: now + TIMING.OFFER_REVEAL_MS  
+      },  
+      anim: { id: uidShort(), type:'offerDraw', to: state.userId }  
+    };  
+  });  
+}  
+  
+/* ✅ 扇手札の増加は演出後 */  
+function pendingCountFor(pid){  
+  const g = state.game || {};  
+  const now = Date.now();  
+  
+  if (g.offer && g.offer.to === pid){  
+    return 1;  
+  }  
+  
+  const cd = g.currentDraw;  
+  if (cd && cd.playerId === pid){  
+    const revealAt = (typeof cd.revealAt === 'number') ? cd.revealAt : 0;  
+  
+    if (cd.kind === 'offer'){  
+      return (revealAt && now < revealAt) ? 1 : 2;  
+    }  
+  
+    if (cd.kind === 'deck'){  
+      const c1 = (typeof cd.count1At === 'number') ? cd.count1At : null;  
+  
+      if (c1 && revealAt){  
+        if (now < c1) return 0;  
+        if (now < revealAt) return 1;  
+        return 2;  
+      }  
+  
+      return (revealAt && now < revealAt) ? 0 : 2;  
+    }  
+  
+    return 2;  
+  }  
+  return 0;  
+}  
+  
+/* 山札UI */  
+function updateDeckUI(){  
+  /* ✅ 本件：強制非表示中は何があっても復活させない */  
+  if (state.local.hardHideTableAndDeck){  
+    deckEl.classList.add('hidden');  
+    deckEl.classList.add('disabled');  
+    deckUnderCardEl.classList.add('hidden');  
+    if (deckShuffleLayer) deckShuffleLayer.classList.add('hidden');  
+    deckEl.classList.remove('is-shuffling');  
+    return;  
+  }  
+  
+  const g = state.game || {};  
+  
+  if (!g || !g.gameId){  
+    deckEl.classList.remove('hidden');  
+    deckCountEl.textContent = '11';  
+    deckEl.classList.add('disabled');  
+  
+    deckUnderCardEl.classList.add('hidden');  
+    stopDiscussionTimer();  
+    return;  
+  }  
+  
+  const deckCount = Array.isArray(g.deck) ? g.deck.length : 0;  
+  deckCountEl.textContent = String(deckCount);  
+  
+  deckEl.classList.toggle('hidden', deckCount <= 0);  
+  
+  const currentPlayer = getNextPlayerId(g);  
+  
+  const can = (joinBox.classList.contains('hidden'))  
+    && (currentPlayer === state.userId)  
+    && (!g.currentDraw || !g.currentDraw.playerId)  
+    && (!state.local.focusOpen)  
+    && !(g.offer && g.offer.to === state.userId)  
+    && !state.local.startShuffling  
+    && (deckCount > 0);  
+  
+  deckEl.classList.toggle('disabled', !can);  
+}  
+  
+/* 山札下カード・議論UI */  
+function updateDiscussionUI(){  
+  /* ✅ 本件：強制非表示中は場のカードを出さない */  
+  if (state.local.hardHideTableAndDeck){  
+    deckUnderCardEl.classList.add('hidden');  
+    stopDiscussionTimer();  
+    setButlerExcludedInteractive(false);  
+    return;  
+  }  
+  
+  const g = state.game || {};  
+  const now = Date.now();  
+  
+  const disc = g?.discussion;  
+  const discStartedAt = (disc && typeof disc.startedAt === 'number') ? disc.startedAt : null;  
+  const discHasStarted = !!(disc && disc.id && discStartedAt && now >= discStartedAt);  
+  
+  const tc = g?.tableCard;  
+  const isPlayingThis = !!(tc?.id && state.local.playingTableId && state.local.playingTableId === tc.id);  
+  
+  let showUnder = false;  
+  if (tc && tc.id && !isPlayingThis){  
+    if (tc.revealed === true) showUnder = true;  
+  
+    const revealAt = (typeof tc.revealAt === 'number') ? tc.revealAt : null;  
+    if (revealAt && now >= revealAt) showUnder = true;  
+  
+    if (!revealAt && typeof tc.placedAt === 'number') showUnder = true;  
+  }  
+  
+  if (showUnder){  
+    deckUnderCardEl.classList.remove('hidden');  
+    applyCardBack(deckUnderCardEl);  
+  } else {  
+    deckUnderCardEl.classList.add('hidden');  
+  }  
+  
+  if (disc && disc.id && discStartedAt){  
+    if (!discHasStarted){  
+      stopDiscussionTimer();  
+    } else {  
+      if (state.local.lastDiscussionId !== disc.id){  
+        state.local.lastDiscussionId = disc.id;  
+        showDiscussionPop();  
+      }  
+  
+      const durationMs = typeof disc.durationMs === 'number' ? disc.durationMs : 180000;  
+      const endAt = discStartedAt + durationMs;  
+  
+      if (state.local.discussionEndAt !== endAt){  
+        startDiscussionTimer(discStartedAt, durationMs);  
+      } else {  
+        discussionTimerEl.classList.remove('hidden');  
+      }  
+    }  
+  } else {  
+    stopDiscussionTimer();  
+    state.local.lastDiscussionId = null;  
+  }  
+  
+  /* ✅ 本件：議論状態更新のたびに、執事クリック窓を再評価 */  
+  updateButlerClickWindow();  
+}  
+  
+/* スタートプレイヤー演出 */  
+async function playStartPlayerSequence(cards){  
+  const deckRect = getDeckRect();  
+  
+  const baseX = window.innerWidth / 2;  
+  const baseY = window.innerHeight * 0.78;  
+  
+  const p1 = { x: baseX - 22, y: baseY };  
+  const p2 = { x: baseX + 22, y: baseY };  
+  
+  const hold1 = await flyFxBig({  
+    from: deckRect,  
+    toPoint: p1,  
+    face:'back',  
+    duration:TIMING.DEAL_FLY_MS,  
+    scaleTo:0.92,  
+    keep:true  
+  });  
+  
+  const offTopRect = { left: baseX, top: -120, width: 0, height: 0 };  
+  const hold2 = await flyFxBig({  
+    from: offTopRect,  
+    toPoint: p2,  
+    face:'back',  
+    duration:TIMING.DEAL_FLY_MS,  
+    scaleTo:0.92,  
+    keep:true  
+  });  
+  
+  hold1?.remove();  
+  hold2?.remove();  
+  
+  openFocusTwo([cards[0], cards[1]]);  
+}  
+  
+/* 受け取り側演出 */  
+async function playReceiveSequence({fromPid, receivedCard, drawnCard}){  
+  if (state.local.focusOpen) return;  
+  
+  openFocusSkeleton();  
+  await wait(30);  
+  
+  const rightPoint = getFocusSlotCenter(1);  
+  const leftPoint  = getFocusSlotCenter(0);  
+  
+  const offRightRect = { left: window.innerWidth + 220, top: rightPoint.y, width: 0, height: 0 };  
+  await flyFxBig({  
+    from: offRightRect,  
+    toPoint: rightPoint,  
+    face: 'back',  
+    label: null,  
+    duration:560,  
+    scaleTo:1.08,  
+    receivedBadge:false,  
+    keep:false  
+  });  
+  setFocusSlot(1, 'front', receivedCard, true);  
+  
+  const offTopRect = { left: leftPoint.x, top: -220, width: 0, height: 0 };  
+  await flyFxBig({  
+    from: offTopRect,  
+    toPoint: leftPoint,  
+    face: 'back',  
+    duration:560,  
+    scaleTo:1.08,  
+    keep:false  
+  });  
+  setFocusSlot(0, 'front', drawnCard, false);  
+  
+  state.local.focusCards = [drawnCard, receivedCard];  
+  state.local.focusReady = true;  
+}  
+  
+/* 他視点アニメ */  
+async function handleAnimEvent(anim){  
+  if (!anim || !anim.id) return;  
+  if (state.local.handledAnimIds.has(anim.id)) return;  
+  state.local.handledAnimIds.add(anim.id);  
+  
+  const deckRect = getDeckRect();  
+  await wait(30);  
+  
+  if (anim.type === 'draw2' && anim.to === state.userId) return;  
+  if (anim.type === 'offerDraw' && anim.to === state.userId) return;  
+  
+  if (anim.type === 'draw2'){  
+    const toRect = getTagRectByPlayerId(anim.to) || deckRect;  
+    await flyFxSmall({ from: deckRect, to: toRect, face:'back', duration:520 });  
+    await flyFxSmall({ from: deckRect, to: toRect, face:'back', delay:80, duration:520 });  
+    return;  
+  }  
+  
+  if (anim.type === 'table'){  
+    const fromRect = getTagRectByPlayerId(anim.from) || deckRect;  
+    const toRect = getDeckUnderTargetRect();  
+  
+    if (anim.tableId){  
+      state.local.playingTableId = anim.tableId;  
+      updateDiscussionUI();  
+    }  
+  
+    await flyFxSmall({ from: fromRect, to: toRect, face:'back', duration:TIMING.TABLE_FLY_MS });  
+  
+    state.local.playingTableId = null;  
+  
+    updateDiscussionUI();  
+    scheduleTableRevealRefresh();  
+    return;  
+  }  
+  
+  if (anim.type === 'pass'){  
+    const fromRect = getTagRectByPlayerId(anim.from) || deckRect;  
+    const toRect   = getTagRectByPlayerId(anim.to)   || deckRect;  
+    await flyFxSmall({ from: fromRect, to: toRect, face:'back', duration:520 });  
+    return;  
+  }  
+  
+  if (anim.type === 'offerDraw'){  
+    const toRect = getFanTargetRect(anim.to) || (getTagRectByPlayerId(anim.to) || deckRect);  
+    await flyFxSmall({ from: deckRect, to: toRect, face:'back', delay:1000, duration:520 });  
+    return;  
+  }  
+}  
+  
+function maybeShowStartPop(){  
+  const g = state.game || {};  
+  if (!g.gameId) return;  
+  if (state.local.shownStartPopForGameId === g.gameId) return;  
+  
+  if (g.startPlayerId === state.userId){  
+    state.local.shownStartPopForGameId = g.gameId;  
+    showMidPop('あなたがスタートプレイヤーです');  
+  }  
+}  
+  
+/* offer処理 */  
+async function handleOffer(){  
+  const g = state.game || {};  
+  const offer = g.offer;  
+  if (!offer || offer.to !== state.userId) return;  
+  
+  if (state.local.handledOfferIds.has(offer.id)) return;  
+  state.local.handledOfferIds.add(offer.id);  
+  
+  await acceptOfferAndDrawOne(offer.id);  
+}  
+  
+/* ヘルプ */  
+const ROLE_HELP = [  
+  { name: "黄色い客人1", text: "一般客人（その1）。" },  
+  { name: "黄色い客人2", text: "一般客人（その2）。" },  
+  { name: "赤い客人",   text: "赤陣営（例）。正体バレに注意。" },  
+  { name: "青い客人",   text: "青陣営（例）。情報収集が鍵。" },  
+  { name: "殺人鬼",     text: "目的：最後まで疑われずに生き残れ。" },  
+  { name: "狂人",       text: "任意。目的：場をかき乱し、真相を遠ざけろ。" },  
+  { name: "執事",       text: "任意。目的：主人を守れ。立ち回りが重要。" },  
+  { name: "富豪",       text: "任意。目的：財産を守れ。交渉が強み。" },  
+  { name: "弁護士",     text: "任意。目的：弁護と誘導で生存を勝ち取れ。" },  
+  { name: "探偵",       text: "任意。目的：事件の真相に迫れ。" },  
+  { name: "爆弾魔",     text: "任意。目的：爆弾の存在を隠しつつ勝利条件を満たせ。" },  
+];  
+  
+function isMandatory(role){ return getMandatoryRolesPlanned().includes(role); }  
+function isOptional(role){ return OPTIONAL_ROLES.includes(role); }  
+  
+function renderHelpList(){  
+  helpBody.innerHTML = '';  
+  
+  const plannedN = getPlannedPlayerCount();  
+  const mandatory = getMandatoryRolesPlanned();  
+  const allowed = new Set([...mandatory, ...OPTIONAL_ROLES]);  
+  
+  const note = document.createElement('p');  
+  note.className = 'help-note';  
+  note.textContent = state.isHost  
+    ? `人数${plannedN}人用の必須は固定。薄いカード＝山札に入らない（任意）。クリックで濃くして追加。`  
+    : `人数${plannedN}人用の必須は固定。薄いカード＝山札に入らない（ホストが選択）。`;  
+  helpBody.appendChild(note);  
+  
+  ROLE_HELP  
+    .filter(r => allowed.has(r.name))  
+    .forEach((r) => {  
+      const row = document.createElement('div');  
+      row.className = 'role-row';  
+  
+      const card = document.createElement('div');  
+      card.className = 'role-card';  
+      applyCardFace(card, r.name);  
+  
+      const desc = document.createElement('divdiv');  
+      desc.className = 'role-desc';  
+  
+      const must = isMandatory(r.name);  
+      const opt  = isOptional(r.name);  
+  
+      const badgeHtml = must  
+        ? `<span class="badge must">必須</span>`  
+        : opt ? `<span class="badge add">任意</span>` : '';  
+  
+      desc.innerHTML = `<div class="name">${r.name}${badgeHtml}</div><div class="text">${r.text}</div>`;  
+  
+      if (opt){  
+        row.classList.add('optional');  
+        const selected = state.local.selectedOptional.has(r.name);  
+        row.classList.toggle('selected', selected);  
+  
+        if (!state.isHost) row.classList.add('disabled-view');  
+  
+        const toggle = async () => {  
+          if (!state.isHost) return;  
+  
+          if (state.local.selectedOptional.has(r.name)){  
+            state.local.selectedOptional.delete(r.name);  
+          } else {  
+            state.local.selectedOptional.add(r.name);  
+          }  
+          row.classList.toggle('selected', state.local.selectedOptional.has(r.name));  
+          await saveOptionalSelectionToDB();  
+        };  
+  
+        card.addEventListener('click', toggle);  
+        desc.addEventListener('click', toggle);  
+      }  
+  
+      helpBody.appendChild(row);  
+      row.appendChild(card);  
+      row.appendChild(desc);  
+    });  
+}  
+function openHelp(){ renderHelpList(); helpBackdrop.classList.remove('hidden'); }  
+function closeHelp(){ helpBackdrop.classList.add('hidden'); }  
+helpBtn.addEventListener('click', () => { if (joinBox.classList.contains('hidden')) openHelp(); });  
+btnHelpClose.addEventListener('click', closeHelp);  
+helpBackdrop.addEventListener('click', (e) => { if (e.target === helpBackdrop) closeHelp(); });  
+  
+async function saveOptionalSelectionToDB(){  
+  if (!state.roomCode) return;  
+  const selected = [...state.local.selectedOptional].filter(r => OPTIONAL_ROLES.includes(r));  
+  await update(ref(db, `rooms/${state.roomCode}`), {  
+    config: {  
+      ...(state.room?.config || {}),  
+      selectedOptionalRoles: selected  
+    }  
+  });  
+}  
+function loadOptionalSelectionFromRoom(){  
+  const selected = (state.room?.config?.selectedOptionalRoles || []).filter(r => OPTIONAL_ROLES.includes(r));  
+  state.local.selectedOptional = new Set(selected);  
+}  
+  
+/* subscribe */  
+function refreshRoomLabels(){  
+  if (!state.roomCode || !state.userName) return;  
+  const label = state.isHost ? '（ホスト）' : '';  
+  const infoText = ` ${state.roomCode},  ${state.userName}${label}`;  
+  roomInfo.textContent = infoText;  
+  roomInfoLobby.textContent = infoText;  
+}  
+function updateHostUI(){  
+  refreshRoomLabels();  
+  if (state.isHost){  
+    hostSettingsBtn.classList.add('visible');  
+  } else {  
+    hostSettingsBtn.classList.remove('visible');  
+    startPop.classList.add('hidden');  
+  }  
+  helpBtn.classList.add('visible');  
+}  
+function subscribeRoom(){  
+  const roomRef = ref(db, `rooms/${state.roomCode}`);  
+  onValue(roomRef, snap => {  
+    state.room = snap.val() || {};  
+    const waiting = (!state.isHost && !state.room.maxPlayers);  
+    hostSelectingPop.classList.toggle('hidden', !waiting);  
+  
+    loadOptionalSelectionFromRoom();  
+    syncSeatUI();  
+  });  
+}  
+function subscribeHostState(){  
+  const hostRef = ref(db, `rooms/${state.roomCode}/hostId`);  
+  onValue(hostRef, snap => {  
+    const hostId = snap.val();  
+    state.isHost = (hostId === state.userId);  
+    updateHostUI();  
+    syncSeatUI();  
+  });  
+}  
+function subscribeHands(){  
+  const handsRef = ref(db, `rooms/${state.roomCode}/hands`);  
+  onValue(handsRef, snap => {  
+    state.hands = snap.val() || {};  
+    renderHands();  
+    updateButlerClickWindow(); /* ✅ 執事判定が手札依存なのでここでも更新 */  
+  });  
+}  
+function subscribeGame(){  
+  const gameRef = ref(db, `rooms/${state.roomCode}/game`);  
+  onValue(gameRef, async snap => {  
+    const g = snap.val() || {};  
+    state.game = g;  
+  
+    if (g && g.gameId){  
+      maybeHandleStartSequence(g);  
+    }  
+  
+    updateDeckUI();  
+    updateDiscussionUI();  
+    maybeShowStartPop();  
+  
+    scheduleCountRefresh();  
+    scheduleTableRevealRefresh();  
+    scheduleDiscussionStartRefresh();  
+  
+    if (g.anim && g.anim.id){  
+      await handleAnimEvent(g.anim);  
+    }  
+  
+    if (g.currentDraw && g.currentDraw.playerId === state.userId){  
+      const drawId = g.currentDraw.id;  
+      if (drawId && state.local.lastDrawPlayedId !== drawId && Array.isArray(g.currentDraw.cards)){  
+        state.local.lastDrawPlayedId = drawId;  
+  
+        const cards = g.currentDraw.cards;  
+  
+        if (g.currentDraw.kind === 'deck'){  
+          await playStartPlayerSequence(cards);  
+        }  
+  
+        if (g.currentDraw.kind === 'offer'){  
+          const received = cards[0];  
+          const drawn    = cards[1];  
+          await playReceiveSequence({ fromPid: g.currentDraw.from, receivedCard: received, drawnCard: drawn });  
+        }  
+      }  
+    }  
+  
+    await handleOffer();  
+    renderHands();  
+  
+    /* ✅ 本件：DB更新（butlerOpen等）で扇ミニ手札の表示が変わるため再評価 */  
+    updateButlerClickWindow();  
+  });  
+}  
+  
+/* render */  
+function renderMyHand(){  
+  myHandEl.innerHTML = '';  
+  const myId = state.userId;  
+  const handData = state.hands[myId];  
+  if (!handData || !Array.isArray(handData.cards)) return;  
+  
+  handData.cards.forEach(v => {  
+    const card = document.createElement('div');  
+    card.className = 'my-card';  
+    applyCardFace(card, v);  
+    myHandEl.appendChild(card);  
+  });  
+}  
+function renderHands(){  
+  renderMyHand();  
+  if (state.latestPlayers.length) renderPlayerCircle(state.latestPlayers);  
+}  
+  
+/* join */  
+function generateRoomCode(length = 6){  
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';  
+  let code = '';  
+  for(let i=0;i<length;i++) code += chars.charAt(Math.floor(Math.random()*chars.length));  
+  return code;  
+}  
+async function restoreSeatFromDB(){  
+  if (!state.roomCode) return;  
+  const tablesRef = ref(db, `rooms/${state.roomCode}/tables`);  
+  const snap = await get(tablesRef);  
+  const data = snap.val() || {};  
+  let mySeatIndex = null;  
+  
+  for (const [seatIndex, t] of Object.entries(data)) {  
+    if (t && t.playerId === state.userId) {  
+      mySeatIndex = Number(seatIndex);  
+      break;  
+    }  
+  }  
+  if (mySeatIndex !== null) state.seatedTable = mySeatIndex;  
+}  
+  
+const urlParams = new URLSearchParams(window.location.search);  
+const roomFromUrl = urlParams.get('room');  
+if(roomFromUrl) inputCode.value = roomFromUrl;  
+  
+btnJoin.addEventListener('click', async () => {  
+  state.userName = inputName.value || '名無し';  
+  state.roomCode = inputCode.value.trim() || generateRoomCode();  
+  
+  await set(ref(db, `rooms/${state.roomCode}/users/${state.userId}`), {  
+    name: state.userName,  
+    joinedAt: Date.now()  
+  });  
+  
+  const roomRef = ref(db, `rooms/${state.roomCode}`);  
+  const roomSnap = await get(roomRef);  
+  const roomData = roomSnap.val();  
+  
+  if(!roomData || !roomData.hostId){  
+    await update(roomRef, { hostId: state.userId });  
+    state.isHost = true;  
+  } else {  
+    state.isHost = (roomData.hostId === state.userId);  
+  }  
+  
+  updateHostUI();  
+  
+  mainEl.classList.remove('prejoin');  
+  mainEl.classList.add('joined');  
+  
+  joinBox.classList.add('hidden');  
+  lobby.classList.remove('hidden');  
+  lobby.classList.add('entered');  
+  
+  await restoreSeatFromDB();  
+  
+  subscribeRoom();  
+  subscribeHostState();  
+  subscribePlayers();  
+  subscribeHands();  
+  subscribeGame();  
+  subscribeFocusClose();  
+  
+  syncSeatUI();  
+  updateDeckUI();  
+  updateDiscussionUI();  
+});  
+  
+copyLinkBtn.addEventListener('click', async () => {  
+  const url = `${location.origin}${location.pathname}?room=${state.roomCode}`;  
+  try {  
+    await navigator.clipboard.writeText(url);  
+    copyLinkBtn.classList.add('copied');  
+    copyLinkBtn.textContent = 'COPIED';  
+    inputCode.value = state.roomCode;  
+    setTimeout(()=>{  
+      copyLinkBtn.classList.remove('copied');  
+      copyLinkBtn.textContent='リンクコピー';  
+    },1500);  
+  } catch {  
+    prompt('コピーできません。手動でコピーしてください', url);  
+  }  
+});  
+  
+/* seat */  
+/* =========================
+   Seat UI（置換：最新版）
+   ========================= */
+let isRenderingSeatTabs = false;
+
+/* 追い出し用（未定義エラー防止） */
+let pendingSeatIndexToSteal = null;
+let pendingSeatPlayerIdToSteal = null;
+
+/* （任意）外部から開けるようにしておく */
+function openKickDialog({ seatIndex, playerId, playerName }){
+  pendingSeatIndexToSteal = Number(seatIndex);
+  pendingSeatPlayerIdToSteal = playerId || null;
+
+  const name = playerName || '既存プレイヤー';
+  if (kickMessage) kickMessage.textContent = `${name} を追い出して、着席しますか？`;
+
+  kickDialog.classList.remove('hidden');
+}
+
+async function syncSeatUI(){
+  if (!state.roomCode) return;
+
+  const maxPlayers = state.room.maxPlayers || null;
+
+  /* 非ホストでmaxPlayers未設定＝待機（座席UI出さない） */
+  if (!state.isHost && !maxPlayers){
+    seatPop.classList.add('hidden');
+    return;
+  }
+  /* 既に着席しているなら出さない */
+  if (state.seatedTable !== null){
+    seatPop.classList.add('hidden');
+    return;
+  }
+
+  await renderSeatTabs();
+  seatPop.classList.remove('hidden');
+}
+
+async function renderSeatTabs(){
+  if (!state.roomCode) return;
+  if (isRenderingSeatTabs) return;
+  isRenderingSeatTabs = true;
+
+  try {
+    seatTabs.innerHTML = '';
+
+    const roomRef = ref(db, `rooms/${state.roomCode}`);
+    const roomSnap = await get(roomRef);
+    const roomData = roomSnap.val() || {};
+    const maxPlayers = roomData.maxPlayers || null;
+
+    /* ホストだけ：人数未設定なら人数選択 */
+    if (state.isHost && !maxPlayers){
+      seatLabel.textContent = '人数を選択';
+
+      for (let i=2; i<=8; i++){
+        const tab = document.createElement('div');
+        tab.className = 'tab';
+        tab.textContent = i;
+
+        tab.onclick = async () => {
+          /* 人数確定 */
+          await update(roomRef, { maxPlayers: i });
+
+          /* ついでにホストを席1に座らせる（あなたの最新版仕様） */
+          const tRef = ref(db, `rooms/${state.roomCode}/tables/1`);
+          await set(tRef, { playerId: state.userId, playerName: state.userName || '名無し' });
+
+          state.seatedTable = 1;
+          seatPop.classList.add('hidden');
+        };
+
+        seatTabs.appendChild(tab);
+      }
+      return;
+    }
+
+    /* 通常：席選択 */
+    seatLabel.textContent = '席を選択';
+
+    const effectiveMax = maxPlayers || 8;
+
+    const tablesSnap = await get(ref(db, `rooms/${state.roomCode}/tables`));
+    const tables = tablesSnap.val() || {};
+
+    for (let i=1; i<=effectiveMax; i++){
+      const tab = document.createElement('div');
+      tab.className = 'tab';
+      tab.textContent = i;
+
+      const t = tables[i];
+      if (t && t.playerId) tab.classList.add('disabled');
+
+      tab.onclick = async () => {
+        if (tab.classList.contains('disabled')) return;
+
+        const tRef = ref(db, `rooms/${state.roomCode}/tables/${i}`);
+        await set(tRef, { playerId: state.userId, playerName: state.userName || '名無し' });
+
+        state.seatedTable = i;
+        seatPop.classList.add('hidden');
+      };
+
+      seatTabs.appendChild(tab);
+    }
+  } finally {
+    isRenderingSeatTabs = false;
+  }
+}
+
+btnSeatCancel.onclick = () => {
+  seatPop.classList.add('hidden');
+  state.seatedTable = null;
+};
+
+
+/* =========================
+   追い出しダイアログ（置換：最新版）
+   ========================= */
+kickDialog.addEventListener('click', (e) => {
+  if (e.target === kickDialog) {
+    kickDialog.classList.add('hidden');
+    pendingSeatIndexToSteal = null;
+    pendingSeatPlayerIdToSteal = null;
+  }
+});
+
+btnKickNo.addEventListener('click', (e) => {
+  e.stopPropagation();
+  kickDialog.classList.add('hidden');
+  pendingSeatIndexToSteal = null;
+  pendingSeatPlayerIdToSteal = null;
+});
+
+btnKickYes.addEventListener('click', async (e) => {
+  e.stopPropagation();
+
+  if (pendingSeatIndexToSteal == null || !state.roomCode) {
+    kickDialog.classList.add('hidden');
+    return;
+  }
+
+  const seatIndex = pendingSeatIndexToSteal;
+
+  const roomRef = ref(db, `rooms/${state.roomCode}`);
+  const roomSnap = await get(roomRef);
+  const roomData = roomSnap.val() || {};
+
+  /* 着席を上書き（追い出し） */
+  const tRef = ref(db, `rooms/${state.roomCode}/tables/${seatIndex}`);
+  await set(tRef, { playerId: state.userId, playerName: state.userName || '名無し' });
+
+  /* もし追い出した相手がホストだったら、ホストも奪取 */
+  if (roomData.hostId && pendingSeatPlayerIdToSteal && roomData.hostId === pendingSeatPlayerIdToSteal) {
+    await update(roomRef, { hostId: state.userId });
+  }
+
+  state.seatedTable = seatIndex;
+
+  kickDialog.classList.add('hidden');
+  pendingSeatIndexToSteal = null;
+  pendingSeatPlayerIdToSteal = null;
+
+  seatPop.classList.add('hidden');
+});
+
+
+/* =========================
+   （任意）クリックで追い出しを開きたい場合の“受け口”
+   既存の renderPlayerCircle 側がこれを呼べばOK。
+   既に別実装があるなら不要。
+   ========================= */
+window.openKickDialog = openKickDialog;
+</script>  
+  
+</body>  
+</html>  
+ 
+ 
+  
+ 
+ 
+ 
