@@ -317,20 +317,24 @@
   .excluded-side-deck .ex.one{ transform:translate(72px, 0px) rotate(0deg); }
   .excluded-side-deck .ex.two{ transform:translate(120px, 0px) rotate(0deg); }
 
-  @keyframes excludedButlerPulse{
-    0%{ transform:scale(1); }
-    50%{ transform:scale(1.12); }
-    100%{ transform:scale(1); }
+  @keyframes excludedButlerPulseOne{
+    0%{ transform:translate(72px, 0px) rotate(0deg) scale(1); }
+    50%{ transform:translate(72px, 0px) rotate(0deg) scale(1.12); }
+    100%{ transform:translate(72px, 0px) rotate(0deg) scale(1); }
+  }
+  @keyframes excludedButlerPulseTwo{
+    0%{ transform:translate(120px, 0px) rotate(0deg) scale(1); }
+    50%{ transform:translate(120px, 0px) rotate(0deg) scale(1.12); }
+    100%{ transform:translate(120px, 0px) rotate(0deg) scale(1); }
   }
   .excluded-side-deck.butler-active .ex{
-    animation:excludedButlerPulse 620ms ease-in-out infinite;
     cursor:pointer;
   }
   .excluded-side-deck.butler-active .ex.one{
-    transform:translate(72px, 0px) rotate(0deg);
+    animation:excludedButlerPulseOne 620ms ease-in-out infinite;
   }
   .excluded-side-deck.butler-active .ex.two{
-    transform:translate(120px, 0px) rotate(0deg);
+    animation:excludedButlerPulseTwo 620ms ease-in-out infinite;
     animation-delay:100ms;
   }
   .excluded-side-deck .ex.revealed{
