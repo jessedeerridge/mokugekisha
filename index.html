@@ -768,7 +768,7 @@ function rectCenterInMain(el){
    ========================= */
 function registerTransit(key, el, toId, expectedToCount, ttlMs=2200){
   const expiresAt = Date.now() + ttlMs;
-  state.inTransit.set(key, { el, toId, expectedToCount, expiresAt });
+  state.inTransit.set(key, { el, toId, expectedToCount, expiresAt, resolved:false });
   setTimeout(() => {
     const t = state.inTransit.get(key);
     if (!t) return;
@@ -782,20 +782,79 @@ function registerTransit(key, el, toId, expectedToCount, ttlMs=2200){
   }, ttlMs + 30);
 }
 
+function findArrivalVisual(toId, expectedToCount){
+  if (!toId || toId === '__deck__') return null;
+
+  if (toId === state.userId){
+    const mine = Array.from(myHandEl.querySelectorAll('.my-card'));
+    if (mine.length < expectedToCount) return null;
+    return mine[Math.max(0, expectedToCount - 1)] || mine[mine.length - 1] || null;
+  }
+
+  const mini = Array.from((getMiniHandEl(toId) || document.createElement('div')).querySelectorAll('.mini-card'));
+  if (mini.length < expectedToCount) return null;
+  return mini[Math.max(0, expectedToCount - 1)] || mini[mini.length - 1] || null;
+}
+
+function settleTransitCard(el, targetEl){
+  if (!el || !targetEl || !el.isConnected || !targetEl.isConnected) return;
+
+  const fromRect = el.getBoundingClientRect();
+  const toRect = targetEl.getBoundingClientRect();
+  if (!fromRect.width || !fromRect.height || !toRect.width || !toRect.height) return;
+
+  const fromCenter = toMainXY(fromRect.left + fromRect.width / 2, fromRect.top + fromRect.height / 2);
+  const toCenter = toMainXY(toRect.left + toRect.width / 2, toRect.top + toRect.height / 2);
+
+  const w = fromRect.width;
+  const h = fromRect.height;
+
+  el.style.left = `${fromCenter.x - w/2}px`;
+  el.style.top = `${fromCenter.y - h/2}px`;
+  el.style.width = `${w}px`;
+  el.style.height = `${h}px`;
+  el.style.transform = 'translate(0px, 0px) rotate(0deg) scale(1)';
+
+  const dx = toCenter.x - fromCenter.x;
+  const dy = toCenter.y - fromCenter.y;
+
+  const settleAnim = el.animate(
+    [
+      { transform:'translate(0px, 0px) rotate(0deg) scale(1)', opacity:1 },
+      { transform:`translate(${dx}px, ${dy}px) rotate(0deg) scale(0.86)`, opacity:1 }
+    ],
+    { duration:140, easing:'cubic-bezier(.22,.84,.22,1)', fill:'forwards' }
+  );
+
+  settleAnim.onfinish = () => {
+    el.classList.add('holding');
+    el.style.transition = 'opacity 140ms ease';
+    el.style.opacity = '0';
+    setTimeout(()=>{ try{ el.remove(); }catch{} }, 180);
+  };
+}
+
 function resolveTransits(){
   for (const [key, t] of state.inTransit.entries()){
     if (t.toId === '__deck__') continue;
+    if (t.resolved) continue;
+
     const cur = handCount(t.toId);
-    if (cur >= t.expectedToCount){
-      try{
-        t.el.classList.add('holding');
-        requestAnimationFrame(() => {
-          t.el.classList.add('fading');
-          setTimeout(()=>{ try{ t.el.remove(); }catch{} }, 180);
-        });
-      }catch{}
+    if (cur < t.expectedToCount) continue;
+
+    const targetEl = findArrivalVisual(t.toId, t.expectedToCount);
+    if (!targetEl) continue;
+
+    t.resolved = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        settleTransitCard(t.el, targetEl);
+      });
+    });
+
+    setTimeout(() => {
       state.inTransit.delete(key);
-    }
+    }, 360);
   }
 }
 
