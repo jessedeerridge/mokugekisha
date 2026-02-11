@@ -411,7 +411,7 @@
   .butler-reveal.visible .br-card{ animation: brPop 320ms cubic-bezier(.22,.84,.22,1) both; }
 
   .butler-reveal .br1{ left:50%; top:0; transform:translate(-50%,0) rotate(-8deg); }
-  .butler-reveal .br2{ left:50%; top:0; transform:translate(-50%,0) rotate(10deg); }
+  .butler-reveal .br2{ display:none; }
 
   .my-hand-wrapper{margin-top:16px;text-align:center;}
   .my-hand-title{display:none;}
@@ -934,6 +934,7 @@ const state = {
   // ✅ NEW: 配布停止＆議論タイマー
   dealStopped: false,
   discussion: null, // { startedAt, durationSec }
+  voteStarted: false,
 
   // ✅ NEW: ルームのタイマー設定（デフォ 5:00）
   timerPresetSec: 300,
@@ -1144,9 +1145,11 @@ function subscribeDiscussion(){
   const rRef = ref(db, `rooms/${state.roomCode}/discussion`);
   onValue(rRef, snap => {
     state.discussion = snap.val() || null;
+    if (!state.discussion?.startedAt) state.voteStarted = false;
     renderTimer();
     if (state.discussion?.startedAt) startLocalTimerLoop();
     else stopLocalTimerLoop();
+    renderHands();
   });
 }
 function subscribeDiscussionEvent(){
@@ -1164,7 +1167,15 @@ function subscribeVoteEvent(){
   const rRef = ref(db, `rooms/${state.roomCode}/voteEvent`);
   onValue(rRef, snap => {
     const ev = snap.val();
-    if (!ev || !ev.id) return;
+    if (!ev || !ev.id){
+      state.voteStarted = false;
+      renderHands();
+      return;
+    }
+
+    state.voteStarted = true;
+    renderHands();
+
     if (ev.id === lastVoteEventId) return;
     lastVoteEventId = ev.id;
 
@@ -1806,6 +1817,7 @@ function applyButlerRightTwoHintAndReveal(cards){
 
   const hasButler = cards.includes('執事');
   const revealed = state.butlerHandReveals?.[state.userId]?.cards || null;
+  const discussionOpen = !!(state.discussion?.startedAt) && !state.voteStarted;
 
   const right2 = els.slice(-2);
   if (revealed && right2.length === 2){
@@ -1820,7 +1832,7 @@ function applyButlerRightTwoHintAndReveal(cards){
   }
 
   // ✅ 未公開で、執事が手札にあるなら：右2枚を大小アニメ（クリック誘導）
-  if (hasButler && right2.length === 2){
+  if (discussionOpen && hasButler && right2.length === 2){
     right2[0].classList.add('butler-hint');
     right2[1].classList.add('butler-hint');
   }
@@ -1878,6 +1890,9 @@ async function fireButlerRevealIfPossible(){
   if (!state.roomCode) return;
 
   const myId = state.userId;
+  const discussionOpen = !!(state.discussion?.startedAt) && !state.voteStarted;
+  if (!discussionOpen) return;
+
   const cards = Array.isArray(state.hands?.[myId]?.cards) ? state.hands[myId].cards : [];
   if (cards.length < 2) return;
   if (!cards.includes('執事')) return;
@@ -1994,9 +2009,7 @@ function applyButlerRevealOnTag(tag, playerId){
   }
 
   const c1 = br.querySelector('.br1');
-  const c2 = br.querySelector('.br2');
-  if (c1) c1.style.backgroundImage = `url('${info.cards[0]}.jpg')`;
-  if (c2) c2.style.backgroundImage = `url('${info.cards[1]}.jpg')`;
+  if (c1) c1.style.backgroundImage = `url('執事.jpg')`;
 
   br.classList.add('visible');
 }
