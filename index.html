@@ -877,16 +877,21 @@ function spawnFlyCardAt(fromEl){
 function animateFlyCardPersistent(fromEl, toEl, opts={}){
   const dur = opts.duration ?? 420;
   const delay = opts.delay ?? 0;
-  if (!fromEl || !toEl) return null;
+  if (!fromEl) return null;
 
   const fr = fromEl.getBoundingClientRect();
-  const tr = toEl.getBoundingClientRect();
-  if (!fr.width || !fr.height || !tr.width || !tr.height) return null;
+  if (!fr.width || !fr.height) return null;
 
   const f = rectCenter(fr);
-  const t = rectCenter(tr);
-
   const fLocal = toMainXY(f.x, f.y);
+
+  let t = opts.toClient || null;
+  if (!t){
+    if (!toEl) return null;
+    const tr = toEl.getBoundingClientRect();
+    if (!tr.width || !tr.height) return null;
+    t = rectCenter(tr);
+  }
   const tLocal = toMainXY(t.x, t.y);
 
   const fly = spawnFlyCardAt(fromEl);
@@ -923,6 +928,26 @@ function getPlayerTagEl(playerId){
 function getMiniHandEl(playerId){
   const tag = getPlayerTagEl(playerId);
   return tag?.querySelector('.mini-hand') || null;
+}
+
+function getMiniHandSlotCenterClient(playerId, count){
+  const miniHand = getMiniHandEl(playerId);
+  if (!miniHand) return null;
+
+  const r = miniHand.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+
+  if (!count || count <= 0) return rectCenter(r);
+
+  const spread = 70;
+  const idx = Math.max(0, count - 1);
+  const angleDeg = (count > 1) ? ((-spread / 2) + (spread / (count - 1)) * idx) : 0;
+  const rad = angleDeg * Math.PI / 180;
+
+  const cardH = 63;
+  const cx = r.left + r.width / 2 + (cardH / 2) * Math.sin(rad);
+  const cy = r.top + cardH - (cardH / 2) * Math.cos(rad);
+  return { x: cx, y: cy };
 }
 
 /* =========================
@@ -1338,9 +1363,11 @@ function subscribeDrawEvent(){
     for(let i=0;i<count;i++){
       const delay = i * 70;
       const expectedToCount = base + (i+1);
+      const toClient = (to === state.userId) ? null : getMiniHandSlotCenterClient(to, expectedToCount);
       requestAnimationFrame(() => {
         const obj = animateFlyCardPersistent(centerDeck, toEl, {
           delay,
+          toClient,
           duration: DRAW_ANIM_MS,
           rotateFrom:-10, rotateTo:14,
           scaleFrom:1.05, scaleTo:1.02
@@ -1379,9 +1406,10 @@ function subscribeMoveEvent(){
     const toEl   = (toId === state.userId) ? myHandEl : (getMiniHandEl(toId) || getPlayerTagEl(toId) || myHandEl);
 
     const expectedToCount = handCount(toId) + 1;
+    const toClient = (toId === state.userId) ? null : getMiniHandSlotCenterClient(toId, expectedToCount);
 
     requestAnimationFrame(() => {
-      const obj = animateFlyCardPersistent(fromEl, toEl, { duration: MOVE_ANIM_MS });
+      const obj = animateFlyCardPersistent(fromEl, toEl, { duration: MOVE_ANIM_MS, toClient });
       if (!obj) return;
       registerTransit(`move:${ev.id}:${toId}`, obj.fly, toId, expectedToCount, 2600);
     });
@@ -2403,11 +2431,15 @@ function bindMyHandDrag(){
     const fromLeft = e.clientX - offsetX;
     const fromTop  = e.clientY - offsetY;
 
+    const toCenterClient = (target.type === 'player')
+      ? (getMiniHandSlotCenterClient(target.playerId, handCount(target.playerId) + 1) || target.centerClient)
+      : target.centerClient;
+
     const { anim, endScale, rot1 } = animateDraggedCardToTarget(
       dragEl,
       fromLeft,
       fromTop,
-      target.centerClient,
+      toCenterClient,
       {
         duration: MOVE_ANIM_MS,
         endScale: 0.70,
@@ -2417,7 +2449,7 @@ function bindMyHandDrag(){
     );
 
     anim.onfinish = () => {
-      const p = toMainXY(target.centerClient.x, target.centerClient.y);
+      const p = toMainXY(toCenterClient.x, toCenterClient.y);
 
       try{
         dragEl.classList.remove('dragging');
