@@ -405,6 +405,10 @@
     background-position:center;
     background-repeat:no-repeat;
   }
+  .my-card.butler-selected{
+    outline:3px dotted #3b82f6;
+    outline-offset:2px;
+  }
 
   /* ✅ 他プレイヤーの執事公開（ミニ手札の前に2枚だけ表を被せる） */
   .player-tag .butler-reveal{
@@ -441,6 +445,26 @@
 
   .butler-reveal .br1{ left:50%; top:0; transform:translate(-50%,0) rotate(-8deg); }
   .butler-reveal .br2{ left:50%; top:0; transform:translate(-50%,0) rotate(10deg); }
+
+  .player-tag .butler-role-reveal{
+    position:absolute;
+    left:50%;
+    top:100%;
+    transform:translate(-50%, 3px);
+    width:42px;
+    height:63px;
+    border-radius:8px;
+    border:1px solid rgba(0,0,0,.65);
+    background:#fff;
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+    box-shadow:0 10px 24px rgba(0,0,0,.22);
+    z-index:55;
+    display:none;
+    pointer-events:none;
+  }
+  .player-tag .butler-role-reveal.visible{ display:block; }
 
   .my-hand-wrapper{margin-top:16px;text-align:center;}
   .my-hand-title{display:none;}
@@ -975,6 +999,7 @@ const state = {
   excludedCards: [],
   excludedLocalRevealed: false,
   voteStarted: false,
+  butlerRoleRevealedPlayers: {},
 };
 
 const mainEl = document.getElementById('main');
@@ -1211,6 +1236,27 @@ function subscribeVoteEvent(){
   });
 }
 
+function subscribeExcludedCards(){
+  const rRef = ref(db, `rooms/${state.roomCode}/excludedCards`);
+  onValue(rRef, snap => {
+    const cards = snap.val();
+    state.excludedCards = Array.isArray(cards) ? cards.slice(0,2) : [];
+
+    if (state.excludedCards.length >= 2) showExcludedSideDeck();
+    else hideExcludedSideDeck();
+
+    updateExcludedSideDeckState();
+  });
+}
+
+function subscribeButlerRoleReveal(){
+  const rRef = ref(db, `rooms/${state.roomCode}/butlerRoleReveal`);
+  onValue(rRef, snap => {
+    state.butlerRoleRevealedPlayers = snap.val() || {};
+    renderPlayerCircle(latestPlayers);
+  });
+}
+
 // ✅ NEW: タイマープリセット購読
 function subscribeTimerPreset(){
   const rRef = ref(db, `rooms/${state.roomCode}/timerPresetSec`);
@@ -1321,6 +1367,8 @@ function bindExcludedSideDeckReveal(){
 
     state.excludedLocalRevealed = true;
     updateExcludedSideDeckState();
+    renderHands();
+    fireButlerRevealIfPossible();
   });
 }
 
@@ -1882,7 +1930,7 @@ function applyButlerRightTwoHintAndReveal(cards){
   // ✅ まず全解除
   const els = Array.from(myHandEl.querySelectorAll('.my-card'));
   els.forEach(el => {
-    el.classList.remove('butler-hint','face-revealed');
+    el.classList.remove('butler-hint','face-revealed','butler-selected');
     el.style.backgroundImage = '';
     el.style.cursor = '';
   });
@@ -1894,6 +1942,11 @@ function applyButlerRightTwoHintAndReveal(cards){
   const revealed = state.butlerHandReveals?.[state.userId]?.cards || null;
 
   const right2 = els.slice(-2);
+  if (state.excludedLocalRevealed){
+    const butlerCardEl = els.find(el => el.dataset.cardName === '執事');
+    if (butlerCardEl) butlerCardEl.classList.add('butler-selected');
+  }
+
   if (revealed && right2.length === 2){
     // ✅ 自分が公開済み：右2枚を表 + 青枠
     myHandEl.classList.add('butler-blue');
@@ -1939,9 +1992,10 @@ function renderMyHand(){
       el.className = 'my-card';
     }
     el.dataset.key = key;
+    el.dataset.cardName = v;
     el.textContent = v;
     el.style.visibility = 'visible';
-    el.classList.remove('dragging','face-down');
+    el.classList.remove('dragging','face-down','butler-selected');
     el.style.transform = '';
     if (el.dataset?.origText != null) delete el.dataset.origText;
     used.add(el);
@@ -1976,13 +2030,18 @@ async function fireButlerRevealIfPossible(){
 
   butlerClickLock = true;
   try{
-    await set(ref(db, `rooms/${state.roomCode}/butlerHandReveal`), {
-      id,
-      playerId: myId,
-      cards: right2,
-      by: myId,
-      at: Date.now()
-    });
+    await Promise.all([
+      set(ref(db, `rooms/${state.roomCode}/butlerHandReveal`), {
+        id,
+        playerId: myId,
+        cards: right2,
+        by: myId,
+        at: Date.now()
+      }),
+      update(ref(db, `rooms/${state.roomCode}/butlerRoleReveal`), {
+        [myId]: { at: Date.now(), by: myId }
+      })
+    ]);
   } finally {
     setTimeout(()=>{ butlerClickLock = false; }, 350);
   }
@@ -2022,6 +2081,11 @@ function ensureTag(player){
     br.appendChild(c1);
     br.appendChild(c2);
     tag.appendChild(br);
+
+    const role = document.createElement('div');
+    role.className = 'butler-role-reveal';
+    role.style.backgroundImage = "url('執事.jpg')";
+    tag.appendChild(role);
 
     tag.onclick = () => {
       if (player.id === state.userId) return;
@@ -2074,6 +2138,10 @@ function applyButlerRevealOnTag(tag, playerId){
   if (!br) return;
 
   const info = state.butlerHandReveals?.[playerId] || null;
+  const role = tag.querySelector('.butler-role-reveal');
+  const showRole = !!state.butlerRoleRevealedPlayers?.[playerId];
+  if (role) role.classList.toggle('visible', showRole);
+
   if (!info || !Array.isArray(info.cards) || info.cards.length < 2){
     br.classList.remove('visible');
     return;
@@ -2220,6 +2288,8 @@ btnJoin.addEventListener('click', async () => {
   subscribeDiscussion();
   subscribeDiscussionEvent();
   subscribeVoteEvent();
+  subscribeExcludedCards();
+  subscribeButlerRoleReveal();
 
   // ✅ NEW: タイマー選択の購読
   subscribeTimerPreset();
@@ -2229,8 +2299,6 @@ btnJoin.addEventListener('click', async () => {
 
   updatePrestartSideDeck();
   state.voteStarted = false;
-  state.excludedCards = [];
-  hideExcludedSideDeck();
 
   syncSeatUI();
   renderTimer();
@@ -3039,13 +3107,16 @@ btnGameStart.addEventListener('click', async () => {
       remove(ref(db, `rooms/${state.roomCode}/discussion`)),
       remove(ref(db, `rooms/${state.roomCode}/discussionEvent`)),
       remove(ref(db, `rooms/${state.roomCode}/voteEvent`)),
+      remove(ref(db, `rooms/${state.roomCode}/excludedCards`)),
 
       // ✅ NEW: 執事公開もリセット
       remove(ref(db, `rooms/${state.roomCode}/butlerHandReveal`)),
+      remove(ref(db, `rooms/${state.roomCode}/butlerRoleReveal`)),
     ]);
 
     // ✅ ローカル状態もリセット（青枠/公開）
     state.butlerHandReveals = {};
+    state.butlerRoleRevealedPlayers = {};
     lastButlerHandRevealId = null;
     myHandEl.classList.remove('butler-blue');
 
@@ -3075,6 +3146,7 @@ btnGameStart.addEventListener('click', async () => {
       const butlerId = crypto.randomUUID();
       await Promise.all([
         set(ref(db, `rooms/${state.roomCode}/deckRemaining`), deckAfterExclude),
+        set(ref(db, `rooms/${state.roomCode}/excludedCards`), excludedCards),
         set(ref(db, `rooms/${state.roomCode}/butlerEvent`), {
           id: butlerId,
           by: state.userId,
@@ -3084,6 +3156,8 @@ btnGameStart.addEventListener('click', async () => {
       ]);
 
       await wait(BUTLER_TOTAL_MS + BUTLER_POST_GAP_MS + 40);
+    } else {
+      await remove(ref(db, `rooms/${state.roomCode}/excludedCards`));
     }
 
     const shuffleId = crypto.randomUUID();
@@ -3140,6 +3214,8 @@ btnResetRoom.addEventListener('click', async () => {
 
     // ✅ 執事公開
     remove(ref(db, `${base}/butlerHandReveal`)),
+    remove(ref(db, `${base}/butlerRoleReveal`)),
+    remove(ref(db, `${base}/excludedCards`)),
   ]);
 
   const keep = document.getElementById('butlerKeepLayer');
@@ -3157,6 +3233,7 @@ btnResetRoom.addEventListener('click', async () => {
   timerText.textContent = fmtMMSS(state.timerPresetSec || 300);
 
   state.butlerHandReveals = {};
+  state.butlerRoleRevealedPlayers = {};
   lastButlerHandRevealId = null;
 
   state.seatedTable = null;
