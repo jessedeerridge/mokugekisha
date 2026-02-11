@@ -313,6 +313,15 @@
     box-shadow:none;
     transform-origin:center;
   }
+
+  .excluded-side-deck .ex.revealed{
+    border:1px solid rgba(0,0,0,.65);
+    background:#fff;
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+    box-shadow:0 10px 24px rgba(0,0,0,.22);
+  }
   /* ✅ 修正：右にスライドして残る除外カードは「斜めにしない」＋「戻らない」 */
   .excluded-side-deck .ex.one{ transform:translate(72px, 0px) rotate(0deg); }
   .excluded-side-deck .ex.two{ transform:translate(120px, 0px) rotate(0deg); }
@@ -361,7 +370,7 @@
 
   /* ✅ 自分手札の外に青枠 */
   .my-hand.butler-blue{
-    outline:3px solid #3b82f6;
+    outline:3px dotted #3b82f6;
     outline-offset:10px;
     border-radius:16px;
   }
@@ -934,6 +943,7 @@ const state = {
   // ✅ NEW: 配布停止＆議論タイマー
   dealStopped: false,
   discussion: null, // { startedAt, durationSec }
+  voteStarted: false,
 
   // ✅ NEW: ルームのタイマー設定（デフォ 5:00）
   timerPresetSec: 300,
@@ -941,6 +951,10 @@ const state = {
   // ✅ NEW: 執事の「右2枚公開」状態（playerId -> {cards:[..], id, at}）
   butlerHandReveals: {},
 };
+
+function inButlerRevealWindow(){
+  return !!(state.discussion?.startedAt) && !state.voteStarted;
+}
 
 const mainEl = document.getElementById('main');
 const fxLayer = document.getElementById('fxLayer');
@@ -1144,9 +1158,12 @@ function subscribeDiscussion(){
   const rRef = ref(db, `rooms/${state.roomCode}/discussion`);
   onValue(rRef, snap => {
     state.discussion = snap.val() || null;
+    if (!state.discussion?.startedAt) state.voteStarted = false;
     renderTimer();
     if (state.discussion?.startedAt) startLocalTimerLoop();
     else stopLocalTimerLoop();
+
+    renderHands();
   });
 }
 function subscribeDiscussionEvent(){
@@ -1164,6 +1181,9 @@ function subscribeVoteEvent(){
   const rRef = ref(db, `rooms/${state.roomCode}/voteEvent`);
   onValue(rRef, snap => {
     const ev = snap.val();
+    state.voteStarted = !!(ev && ev.id);
+    renderHands();
+
     if (!ev || !ev.id) return;
     if (ev.id === lastVoteEventId) return;
     lastVoteEventId = ev.id;
@@ -1234,12 +1254,41 @@ function updatePrestartSideDeck(){
 /* =========================
    ✅ 除外カード表示（消えない／スタート押下でだけ消す）
    ========================= */
-function showExcludedSideDeck(){
+function pickRandomButlerPreviewCards(pool){
+  const src = Array.isArray(pool) ? pool.filter(v => v && v !== '殺人鬼') : [];
+  if (src.length < 2){
+    const fallback = ROLE_NAMES.filter(v => v !== '殺人鬼');
+    return shuffleArray(fallback).slice(0, 2);
+  }
+  return shuffleArray(src).slice(0, 2);
+}
+
+function setExcludedSideDeckCards(cards){
+  const ex1 = excludedSideDeckEl.querySelector('.ex.one');
+  const ex2 = excludedSideDeckEl.querySelector('.ex.two');
+  const pair = Array.isArray(cards) ? cards.slice(0,2) : [];
+
+  [ex1, ex2].forEach((el, idx) => {
+    if (!el) return;
+    const name = pair[idx] || '';
+    if (!name){
+      el.classList.remove('revealed');
+      el.style.backgroundImage = '';
+      return;
+    }
+    el.classList.add('revealed');
+    el.style.backgroundImage = `url('${name}.jpg')`;
+  });
+}
+
+function showExcludedSideDeck(cards){
   state.excludedShown = true;
+  setExcludedSideDeckCards(cards);
   excludedSideDeckEl.classList.remove('hidden');
 }
 function hideExcludedSideDeck(){
   state.excludedShown = false;
+  setExcludedSideDeckCards([]);
   excludedSideDeckEl.classList.add('hidden');
 }
 
@@ -1574,7 +1623,7 @@ function makeButlerCardAtMainXY(x, y){
   return card;
 }
 
-async function playButlerCinematic(){
+async function playButlerCinematic(previewCards = []){
   if (!centerDeck) return;
   if (centerDeck.classList.contains('empty')) return;
 
@@ -1650,7 +1699,7 @@ async function playButlerCinematic(){
 
   try { layer.remove(); } catch {}
 
-  showExcludedSideDeck();
+  showExcludedSideDeck(previewCards);
 }
 
 function subscribeButlerEvent(){
@@ -1661,7 +1710,8 @@ function subscribeButlerEvent(){
     if (ev.id === lastButlerEventId) return;
     lastButlerEventId = ev.id;
 
-    await playButlerCinematic();
+    const previewCards = Array.isArray(ev.previewCards) ? ev.previewCards.slice(0,2) : [];
+    await playButlerCinematic(previewCards);
   });
 }
 
@@ -1819,6 +1869,9 @@ function applyButlerRightTwoHintAndReveal(cards){
     return;
   }
 
+  // ✅ 議論開始〜投票までだけ誘導アニメを出す
+  if (!inButlerRevealWindow()) return;
+
   // ✅ 未公開で、執事が手札にあるなら：右2枚を大小アニメ（クリック誘導）
   if (hasButler && right2.length === 2){
     right2[0].classList.add('butler-hint');
@@ -1876,6 +1929,7 @@ let butlerClickLock = false;
 async function fireButlerRevealIfPossible(){
   if (butlerClickLock) return;
   if (!state.roomCode) return;
+  if (!inButlerRevealWindow()) return;
 
   const myId = state.userId;
   const cards = Array.isArray(state.hands?.[myId]?.cards) ? state.hands[myId].cards : [];
@@ -1987,6 +2041,11 @@ function applyButlerRevealOnTag(tag, playerId){
   const br = tag.querySelector('.butler-reveal');
   if (!br) return;
 
+  if (playerId === state.userId){
+    br.classList.remove('visible');
+    return;
+  }
+
   const info = state.butlerHandReveals?.[playerId] || null;
   if (!info || !Array.isArray(info.cards) || info.cards.length < 2){
     br.classList.remove('visible');
@@ -1995,8 +2054,9 @@ function applyButlerRevealOnTag(tag, playerId){
 
   const c1 = br.querySelector('.br1');
   const c2 = br.querySelector('.br2');
-  if (c1) c1.style.backgroundImage = `url('${info.cards[0]}.jpg')`;
-  if (c2) c2.style.backgroundImage = `url('${info.cards[1]}.jpg')`;
+  if (c1) c1.style.backgroundImage = "url('執事.jpg')";
+  if (c2) c2.style.backgroundImage = '';
+  if (c2) c2.style.display = 'none';
 
   br.classList.add('visible');
 }
@@ -2955,10 +3015,12 @@ btnGameStart.addEventListener('click', async () => {
     const hasButler = Array.isArray(deckNow) && deckNow.includes("執事");
     if (hasButler){
       const butlerId = crypto.randomUUID();
+      const previewCards = pickRandomButlerPreviewCards(deckNow);
       await set(ref(db, `rooms/${state.roomCode}/butlerEvent`), {
         id: butlerId,
         by: state.userId,
-        at: Date.now()
+        at: Date.now(),
+        previewCards
       });
 
       await wait(BUTLER_TOTAL_MS + BUTLER_POST_GAP_MS + 40);
