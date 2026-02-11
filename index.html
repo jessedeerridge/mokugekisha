@@ -820,7 +820,7 @@ function spawnFlyCardAt(fromEl){
   const fr = fromEl.getBoundingClientRect();
   if (!fr.width || !fr.height) return null;
 
-  const f = rectCenter(fr);
+  const f = getFlyAnchorClient(fromEl, fr);
   const p = toMainXY(f.x, f.y);
 
   const fly = document.createElement('div');
@@ -834,6 +834,20 @@ function spawnFlyCardAt(fromEl){
   return fly;
 }
 
+function getFlyAnchorClient(el, rect=null){
+  const r = rect || el.getBoundingClientRect();
+  if (!r.width || !r.height) return rectCenter(r);
+
+  if (el.classList?.contains('mini-hand')){
+    return {
+      x: r.left + (r.width / 2),
+      y: r.top + 31.5
+    };
+  }
+
+  return rectCenter(r);
+}
+
 function animateFlyCardPersistent(fromEl, toEl, opts={}){
   const dur = opts.duration ?? 420;
   const delay = opts.delay ?? 0;
@@ -843,8 +857,8 @@ function animateFlyCardPersistent(fromEl, toEl, opts={}){
   const tr = toEl.getBoundingClientRect();
   if (!fr.width || !fr.height || !tr.width || !tr.height) return null;
 
-  const f = rectCenter(fr);
-  const t = rectCenter(tr);
+  const f = getFlyAnchorClient(fromEl, fr);
+  const t = getFlyAnchorClient(toEl, tr);
 
   const fLocal = toMainXY(f.x, f.y);
   const tLocal = toMainXY(t.x, t.y);
