@@ -93,8 +93,8 @@
   }
 
   .player-tag .mini-hand{
-    position:absolute;left:50%;top:100%;
-    transform:translate(-50%,3px);
+    position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%);
     width:120px;height:90px;pointer-events:none;
     overflow:visible;
   }
@@ -783,6 +783,7 @@ function registerTransit(key, el, toId, expectedToCount, ttlMs=2200){
 }
 
 function resolveTransits(){
+  let changed = false;
   for (const [key, t] of state.inTransit.entries()){
     if (t.toId === '__deck__') continue;
     const cur = handCount(t.toId);
@@ -795,8 +796,21 @@ function resolveTransits(){
         });
       }catch{}
       state.inTransit.delete(key);
+      changed = true;
     }
   }
+
+  if (changed && !drag && latestPlayers.length){
+    renderPlayerCircle(latestPlayers);
+  }
+}
+
+function countIncomingTransits(playerId){
+  let n = 0;
+  for (const [,t] of state.inTransit.entries()){
+    if (t.toId === playerId) n += 1;
+  }
+  return n;
 }
 
 /* =========================
@@ -1544,7 +1558,9 @@ function renderPlayerCircle(players){
 
     if (p.id !== state.userId){
       const real = handCount(p.id);
-      layoutMiniHand(tag, Math.max(0, real));
+      const incomingTransit = countIncomingTransits(p.id);
+      const visible = Math.max(0, real - incomingTransit);
+      layoutMiniHand(tag, visible);
     }
   });
 
