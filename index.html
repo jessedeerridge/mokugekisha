@@ -93,9 +93,13 @@
   }
 
   .player-tag .mini-hand{
-    position:absolute;left:50%;top:100%;
-    transform:translate(-50%,3px);
-    width:120px;height:90px;pointer-events:none;
+    position:absolute;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    width:120px;
+    height:90px;
+    pointer-events:none;
     overflow:visible;
   }
   .player-tag .mini-hand::before{
@@ -768,7 +772,7 @@ function rectCenterInMain(el){
    ========================= */
 function registerTransit(key, el, toId, expectedToCount, ttlMs=2200){
   const expiresAt = Date.now() + ttlMs;
-  state.inTransit.set(key, { el, toId, expectedToCount, expiresAt });
+  state.inTransit.set(key, { el, toId, expectedToCount, expiresAt, resolved:false });
   setTimeout(() => {
     const t = state.inTransit.get(key);
     if (!t) return;
@@ -782,20 +786,60 @@ function registerTransit(key, el, toId, expectedToCount, ttlMs=2200){
   }, ttlMs + 30);
 }
 
+function findArrivalVisual(toId, expectedToCount){
+  if (!toId || toId === '__deck__') return null;
+
+  if (toId === state.userId){
+    const mine = Array.from(myHandEl.querySelectorAll('.my-card'));
+    if (mine.length < expectedToCount) return null;
+    return mine[Math.max(0, expectedToCount - 1)] || mine[mine.length - 1] || null;
+  }
+
+  const mini = Array.from((getMiniHandEl(toId) || document.createElement('div')).querySelectorAll('.mini-card'));
+  if (mini.length < expectedToCount) return null;
+  return mini[Math.max(0, expectedToCount - 1)] || mini[mini.length - 1] || null;
+}
+
+function settleTransitCard(el, targetEl){
+  if (!el || !targetEl || !el.isConnected || !targetEl.isConnected) return;
+
+  el.classList.add('holding');
+
+  const settleAnim = el.animate(
+    [
+      { opacity:1, offset:0 },
+      { opacity:1, offset:0.55 },
+      { opacity:0, offset:1 }
+    ],
+    { duration:170, easing:'cubic-bezier(.22,.84,.22,1)', fill:'forwards' }
+  );
+
+  settleAnim.onfinish = () => {
+    try{ el.remove(); }catch{}
+  };
+}
+
 function resolveTransits(){
   for (const [key, t] of state.inTransit.entries()){
     if (t.toId === '__deck__') continue;
+    if (t.resolved) continue;
+
     const cur = handCount(t.toId);
-    if (cur >= t.expectedToCount){
-      try{
-        t.el.classList.add('holding');
-        requestAnimationFrame(() => {
-          t.el.classList.add('fading');
-          setTimeout(()=>{ try{ t.el.remove(); }catch{} }, 180);
-        });
-      }catch{}
+    if (cur < t.expectedToCount) continue;
+
+    const targetEl = findArrivalVisual(t.toId, t.expectedToCount);
+    if (!targetEl) continue;
+
+    t.resolved = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        settleTransitCard(t.el, targetEl);
+      });
+    });
+
+    setTimeout(() => {
       state.inTransit.delete(key);
-    }
+    }, 260);
   }
 }
 
@@ -837,16 +881,21 @@ function spawnFlyCardAt(fromEl){
 function animateFlyCardPersistent(fromEl, toEl, opts={}){
   const dur = opts.duration ?? 420;
   const delay = opts.delay ?? 0;
-  if (!fromEl || !toEl) return null;
+  if (!fromEl) return null;
 
   const fr = fromEl.getBoundingClientRect();
-  const tr = toEl.getBoundingClientRect();
-  if (!fr.width || !fr.height || !tr.width || !tr.height) return null;
+  if (!fr.width || !fr.height) return null;
 
   const f = rectCenter(fr);
-  const t = rectCenter(tr);
-
   const fLocal = toMainXY(f.x, f.y);
+
+  let t = opts.toClient || null;
+  if (!t){
+    if (!toEl) return null;
+    const tr = toEl.getBoundingClientRect();
+    if (!tr.width || !tr.height) return null;
+    t = rectCenter(tr);
+  }
   const tLocal = toMainXY(t.x, t.y);
 
   const fly = spawnFlyCardAt(fromEl);
@@ -883,6 +932,49 @@ function getPlayerTagEl(playerId){
 function getMiniHandEl(playerId){
   const tag = getPlayerTagEl(playerId);
   return tag?.querySelector('.mini-hand') || null;
+}
+
+function getMiniHandSlotCenterClient(playerId, count){
+  const miniHand = getMiniHandEl(playerId);
+  if (!miniHand) return null;
+
+  const r = miniHand.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+
+  if (!count || count <= 0) return rectCenter(r);
+
+  const spread = 70;
+  const idx = Math.max(0, count - 1);
+  const angleDeg = (count > 1) ? ((-spread / 2) + (spread / (count - 1)) * idx) : 0;
+  const rad = angleDeg * Math.PI / 180;
+
+  const cardH = 63;
+  const cx = r.left + r.width / 2 + (cardH / 2) * Math.sin(rad);
+  const cy = r.top + cardH - (cardH / 2) * Math.cos(rad);
+  return { x: cx, y: cy };
+}
+
+function resolveHandTarget(playerId, expectedCount){
+  if (playerId === state.userId){
+    return { el: myHandEl, toClient: null };
+  }
+  const miniHand = getMiniHandEl(playerId);
+  if (!miniHand) return null;
+
+  const toClient = getMiniHandSlotCenterClient(playerId, expectedCount);
+  if (!toClient) return null;
+
+  return { el: miniHand, toClient };
+}
+
+function runWhenHandTargetReady(playerId, expectedCount, cb, retries=10){
+  const target = resolveHandTarget(playerId, expectedCount);
+  if (target){
+    cb(target);
+    return;
+  }
+  if (retries <= 0) return;
+  requestAnimationFrame(() => runWhenHandTargetReady(playerId, expectedCount, cb, retries - 1));
 }
 
 /* =========================
@@ -1292,15 +1384,14 @@ function subscribeDrawEvent(){
     const count = ev.count ?? 1;
     if (!to || count <= 0) return;
 
-    const toEl = (to === state.userId) ? myHandEl : (getMiniHandEl(to) || getPlayerTagEl(to) || myHandEl);
-
     const base = handCount(to);
     for(let i=0;i<count;i++){
       const delay = i * 70;
       const expectedToCount = base + (i+1);
-      requestAnimationFrame(() => {
-        const obj = animateFlyCardPersistent(centerDeck, toEl, {
+      runWhenHandTargetReady(to, expectedToCount, (target) => {
+        const obj = animateFlyCardPersistent(centerDeck, target.el, {
           delay,
+          toClient: target.toClient,
           duration: DRAW_ANIM_MS,
           rotateFrom:-10, rotateTo:14,
           scaleFrom:1.05, scaleTo:1.02
@@ -1336,12 +1427,14 @@ function subscribeMoveEvent(){
     if (ev.by === state.userId) return;
 
     const fromEl = (fromId === state.userId) ? myHandEl : (getMiniHandEl(fromId) || getPlayerTagEl(fromId) || centerDeck);
-    const toEl   = (toId === state.userId) ? myHandEl : (getMiniHandEl(toId) || getPlayerTagEl(toId) || myHandEl);
 
     const expectedToCount = handCount(toId) + 1;
 
-    requestAnimationFrame(() => {
-      const obj = animateFlyCardPersistent(fromEl, toEl, { duration: MOVE_ANIM_MS });
+    runWhenHandTargetReady(toId, expectedToCount, (target) => {
+      const obj = animateFlyCardPersistent(fromEl, target.el, {
+        duration: MOVE_ANIM_MS,
+        toClient: target.toClient
+      });
       if (!obj) return;
       registerTransit(`move:${ev.id}:${toId}`, obj.fly, toId, expectedToCount, 2600);
     });
@@ -2363,11 +2456,15 @@ function bindMyHandDrag(){
     const fromLeft = e.clientX - offsetX;
     const fromTop  = e.clientY - offsetY;
 
+    const toCenterClient = (target.type === 'player')
+      ? (getMiniHandSlotCenterClient(target.playerId, handCount(target.playerId) + 1) || target.centerClient)
+      : target.centerClient;
+
     const { anim, endScale, rot1 } = animateDraggedCardToTarget(
       dragEl,
       fromLeft,
       fromTop,
-      target.centerClient,
+      toCenterClient,
       {
         duration: MOVE_ANIM_MS,
         endScale: 0.70,
@@ -2377,7 +2474,7 @@ function bindMyHandDrag(){
     );
 
     anim.onfinish = () => {
-      const p = toMainXY(target.centerClient.x, target.centerClient.y);
+      const p = toMainXY(toCenterClient.x, toCenterClient.y);
 
       try{
         dragEl.classList.remove('dragging');
