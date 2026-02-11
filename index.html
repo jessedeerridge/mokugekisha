@@ -800,7 +800,7 @@
       <div id="deckCircle" class="deck-circle" aria-hidden="true"></div>
 
       <!-- ✅ デッキ右2枚（スタート押すまで表示、スタートで消える） -->
-      <div id="prestartSideDeck" class="prestart-side-deck" aria-hidden="true">
+      <div id="prestartSideDeck" class="prestart-side-deck hidden" aria-hidden="true">
         <div class="sdc one"></div>
         <div class="sdc two"></div>
       </div>
@@ -1226,7 +1226,8 @@ function clearLocalHandVisuals(){
    ✅ 右2枚（スタート前だけ表示）
    ========================= */
 function updatePrestartSideDeck(){
-  const hide = !!state.gameStarted;
+  const hasGeneratedDeck = Array.isArray(state.room?.deckGenerated) && state.room.deckGenerated.length > 0;
+  const hide = !!state.gameStarted || !hasGeneratedDeck;
   prestartSideDeckEl.classList.toggle('hidden', hide);
 }
 
@@ -1349,6 +1350,7 @@ function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   onValue(roomRef, snap => {
     state.room = snap.val() || {};
+    updatePrestartSideDeck();
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
     if (!helpBackdrop.classList.contains('hidden')) renderHelpList();
@@ -2642,7 +2644,18 @@ function getDropTargetForNextPlayer(clientX, clientY){
   const inside = (dx*dx + dy*dy) <= (radius*radius);
   if (!inside) return null;
 
-  return { type:'player', playerId: nextId, el: mh, center: toMainXY(c.x, c.y) };
+  return { type:'player', playerId: nextId, el: mh, center: getMiniHandCardCenterInMain(mh) };
+}
+
+function getMiniHandCardCenterInMain(miniHandEl){
+  const r = miniHandEl?.getBoundingClientRect?.();
+  if (!r || !r.width || !r.height) return null;
+
+  // mini-cardは mini-hand の top:0 / left:50% に描画されるため、
+  // 到着点もその中心に合わせる。
+  const targetVX = r.left + (r.width / 2);
+  const targetVY = r.top + (63 / 2);
+  return toMainXY(targetVX, targetVY);
 }
 
 function getDropTarget(clientX, clientY){
