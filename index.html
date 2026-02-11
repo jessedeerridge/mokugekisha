@@ -184,7 +184,7 @@
   .player-tag.me{ background:#111;color:#fff;border-color:#111; }
 
   .player-tag .mini-card{
-    position:absolute;left:50%;top:0;
+    position:absolute;left:50%;top:50%;
     width:42px; height:63px;
     border-radius:8px;border:1px solid rgba(255,255,255,.75);
     background-color:var(--back-bg);
@@ -200,7 +200,7 @@
     background-repeat:
       no-repeat,
       var(--back-repeat);
-    transform-origin:bottom center;
+    transform-origin:center center;
     box-shadow:0 6px 16px rgba(0,0,0,.18);
   }
 
@@ -1494,7 +1494,7 @@ function layoutMiniHand(tag, count){
   const base = (count > 1) ? (-spread/2) : 0;
   existing.forEach((cardEl, idx2) => {
     const angleDeg = (count > 1) ? base + (spread/(count-1))*idx2 : 0;
-    cardEl.style.transform = `translate(-50%,0) rotate(${angleDeg}deg)`;
+    cardEl.style.transform = `translate(-50%,-50%) rotate(${angleDeg}deg)`;
     cardEl.style.zIndex = String(10 + idx2);
   });
 }
