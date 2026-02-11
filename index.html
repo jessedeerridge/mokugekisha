@@ -940,6 +940,12 @@ const state = {
 
   // ✅ NEW: 執事の「右2枚公開」状態（playerId -> {cards:[..], id, at}）
   butlerHandReveals: {},
+
+  // ✅ NEW: 執事演出でデッキ右に見せる2枚
+  butlerSideCards: null,
+
+  // ✅ NEW: 投票イベント（議論→投票の間の判定用）
+  voteEvent: null,
 };
 
 const mainEl = document.getElementById('main');
@@ -1145,6 +1151,7 @@ function subscribeDiscussion(){
   onValue(rRef, snap => {
     state.discussion = snap.val() || null;
     renderTimer();
+    renderMyHand();
     if (state.discussion?.startedAt) startLocalTimerLoop();
     else stopLocalTimerLoop();
   });
@@ -1164,6 +1171,9 @@ function subscribeVoteEvent(){
   const rRef = ref(db, `rooms/${state.roomCode}/voteEvent`);
   onValue(rRef, snap => {
     const ev = snap.val();
+    state.voteEvent = ev || null;
+    renderMyHand();
+
     if (!ev || !ev.id) return;
     if (ev.id === lastVoteEventId) return;
     lastVoteEventId = ev.id;
@@ -1237,10 +1247,44 @@ function updatePrestartSideDeck(){
 function showExcludedSideDeck(){
   state.excludedShown = true;
   excludedSideDeckEl.classList.remove('hidden');
+  applyButlerSideDeckVisuals(state.butlerSideCards);
 }
 function hideExcludedSideDeck(){
   state.excludedShown = false;
   excludedSideDeckEl.classList.add('hidden');
+}
+
+function pickRandomButlerSideCards(baseDeck){
+  const src = Array.isArray(baseDeck) ? baseDeck.slice() : [];
+  const pool = src.filter(c => c !== '殺人鬼');
+  if (pool.length < 2) return null;
+  const shuffled = shuffleArray(pool);
+  return shuffled.slice(0, 2);
+}
+
+function applyButlerSideDeckVisuals(cards){
+  const one = excludedSideDeckEl.querySelector('.ex.one');
+  const two = excludedSideDeckEl.querySelector('.ex.two');
+  if (!one || !two) return;
+
+  if (!Array.isArray(cards) || cards.length < 2){
+    one.style.backgroundImage = '';
+    two.style.backgroundImage = '';
+    return;
+  }
+
+  one.style.backgroundImage = `url('${cards[0]}.jpg')`;
+  two.style.backgroundImage = `url('${cards[1]}.jpg')`;
+}
+
+function isDuringDiscussionBeforeVote(){
+  const d = state.discussion;
+  if (!d || !d.startedAt || !d.durationSec) return false;
+  if (state.voteEvent?.id) return false;
+
+  const now = Date.now();
+  const endAt = d.startedAt + d.durationSec * 1000;
+  return now < endAt;
 }
 
 /* =========================
@@ -1574,7 +1618,7 @@ function makeButlerCardAtMainXY(x, y){
   return card;
 }
 
-async function playButlerCinematic(){
+async function playButlerCinematic(sideCards){
   if (!centerDeck) return;
   if (centerDeck.classList.contains('empty')) return;
 
@@ -1650,6 +1694,7 @@ async function playButlerCinematic(){
 
   try { layer.remove(); } catch {}
 
+  state.butlerSideCards = Array.isArray(sideCards) ? sideCards.slice(0,2) : null;
   showExcludedSideDeck();
 }
 
@@ -1661,7 +1706,11 @@ function subscribeButlerEvent(){
     if (ev.id === lastButlerEventId) return;
     lastButlerEventId = ev.id;
 
-    await playButlerCinematic();
+    const sideCards = Array.isArray(ev.sideCards) ? ev.sideCards.slice(0,2) : null;
+    state.butlerSideCards = sideCards;
+    applyButlerSideDeckVisuals(sideCards);
+
+    await playButlerCinematic(sideCards);
   });
 }
 
@@ -1820,7 +1869,7 @@ function applyButlerRightTwoHintAndReveal(cards){
   }
 
   // ✅ 未公開で、執事が手札にあるなら：右2枚を大小アニメ（クリック誘導）
-  if (hasButler && right2.length === 2){
+  if (hasButler && right2.length === 2 && isDuringDiscussionBeforeVote()){
     right2[0].classList.add('butler-hint');
     right2[1].classList.add('butler-hint');
   }
@@ -1881,6 +1930,7 @@ async function fireButlerRevealIfPossible(){
   const cards = Array.isArray(state.hands?.[myId]?.cards) ? state.hands[myId].cards : [];
   if (cards.length < 2) return;
   if (!cards.includes('執事')) return;
+  if (!isDuringDiscussionBeforeVote()) return;
 
   // すでに公開済みなら何もしない
   if (state.butlerHandReveals?.[myId]?.cards) return;
@@ -1995,8 +2045,13 @@ function applyButlerRevealOnTag(tag, playerId){
 
   const c1 = br.querySelector('.br1');
   const c2 = br.querySelector('.br2');
-  if (c1) c1.style.backgroundImage = `url('${info.cards[0]}.jpg')`;
-  if (c2) c2.style.backgroundImage = `url('${info.cards[1]}.jpg')`;
+  if (c1){
+    c1.style.left = '50%';
+    c1.style.top = '0';
+    c1.style.transform = 'translate(-50%,0) rotate(0deg)';
+    c1.style.backgroundImage = `url('執事.jpg')`;
+  }
+  if (c2) c2.style.display = 'none';
 
   br.classList.add('visible');
 }
@@ -2931,6 +2986,9 @@ btnGameStart.addEventListener('click', async () => {
 
     // ✅ ローカル状態もリセット（青枠/公開）
     state.butlerHandReveals = {};
+    state.voteEvent = null;
+    state.butlerSideCards = null;
+    applyButlerSideDeckVisuals(null);
     lastButlerHandRevealId = null;
     myHandEl.classList.remove('butler-blue');
 
@@ -2954,11 +3012,16 @@ btnGameStart.addEventListener('click', async () => {
     const deckNow = deckSnap.val() || [];
     const hasButler = Array.isArray(deckNow) && deckNow.includes("執事");
     if (hasButler){
+      const sideCards = pickRandomButlerSideCards(deckNow);
+      state.butlerSideCards = sideCards;
+      applyButlerSideDeckVisuals(sideCards);
+
       const butlerId = crypto.randomUUID();
       await set(ref(db, `rooms/${state.roomCode}/butlerEvent`), {
         id: butlerId,
         by: state.userId,
-        at: Date.now()
+        at: Date.now(),
+        sideCards
       });
 
       await wait(BUTLER_TOTAL_MS + BUTLER_POST_GAP_MS + 40);
