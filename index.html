@@ -799,38 +799,19 @@ function findArrivalVisual(toId, expectedToCount){
 function settleTransitCard(el, targetEl){
   if (!el || !targetEl || !el.isConnected || !targetEl.isConnected) return;
 
-  const fromRect = el.getBoundingClientRect();
-  const toRect = targetEl.getBoundingClientRect();
-  if (!fromRect.width || !fromRect.height || !toRect.width || !toRect.height) return;
-
-  const fromCenter = toMainXY(fromRect.left + fromRect.width / 2, fromRect.top + fromRect.height / 2);
-  const toCenter = toMainXY(toRect.left + toRect.width / 2, toRect.top + toRect.height / 2);
-
-  const w = fromRect.width;
-  const h = fromRect.height;
-
-  el.style.left = `${fromCenter.x - w/2}px`;
-  el.style.top = `${fromCenter.y - h/2}px`;
-  el.style.width = `${w}px`;
-  el.style.height = `${h}px`;
-  el.style.transform = 'translate(0px, 0px) rotate(0deg) scale(1)';
-
-  const dx = toCenter.x - fromCenter.x;
-  const dy = toCenter.y - fromCenter.y;
+  el.classList.add('holding');
 
   const settleAnim = el.animate(
     [
-      { transform:'translate(0px, 0px) rotate(0deg) scale(1)', opacity:1 },
-      { transform:`translate(${dx}px, ${dy}px) rotate(0deg) scale(0.86)`, opacity:1 }
+      { opacity:1, offset:0 },
+      { opacity:1, offset:0.55 },
+      { opacity:0, offset:1 }
     ],
-    { duration:140, easing:'cubic-bezier(.22,.84,.22,1)', fill:'forwards' }
+    { duration:170, easing:'cubic-bezier(.22,.84,.22,1)', fill:'forwards' }
   );
 
   settleAnim.onfinish = () => {
-    el.classList.add('holding');
-    el.style.transition = 'opacity 140ms ease';
-    el.style.opacity = '0';
-    setTimeout(()=>{ try{ el.remove(); }catch{} }, 180);
+    try{ el.remove(); }catch{}
   };
 }
 
@@ -854,7 +835,7 @@ function resolveTransits(){
 
     setTimeout(() => {
       state.inTransit.delete(key);
-    }, 360);
+    }, 260);
   }
 }
 
