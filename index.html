@@ -940,6 +940,9 @@ const state = {
 
   // ✅ NEW: 執事の「右2枚公開」状態（playerId -> {cards:[..], id, at}）
   butlerHandReveals: {},
+
+  // ✅ NEW: 投票開始済みフラグ（執事公開の有効時間制御）
+  voteStarted: false,
 };
 
 const mainEl = document.getElementById('main');
@@ -1144,9 +1147,14 @@ function subscribeDiscussion(){
   const rRef = ref(db, `rooms/${state.roomCode}/discussion`);
   onValue(rRef, snap => {
     state.discussion = snap.val() || null;
+    if (!state.discussion?.startedAt){
+      state.voteStarted = false;
+    }
     renderTimer();
     if (state.discussion?.startedAt) startLocalTimerLoop();
     else stopLocalTimerLoop();
+
+    renderHands();
   });
 }
 function subscribeDiscussionEvent(){
@@ -1164,12 +1172,19 @@ function subscribeVoteEvent(){
   const rRef = ref(db, `rooms/${state.roomCode}/voteEvent`);
   onValue(rRef, snap => {
     const ev = snap.val();
+    state.voteStarted = !!(ev && ev.id);
     if (!ev || !ev.id) return;
     if (ev.id === lastVoteEventId) return;
     lastVoteEventId = ev.id;
 
     showSlidePop('投票！');
+    renderHands();
   });
+}
+
+function isButlerRevealWindowOpen(){
+  const inDiscussion = !!state.discussion?.startedAt;
+  return inDiscussion && !state.voteStarted;
 }
 
 // ✅ NEW: タイマープリセット購読
@@ -1806,9 +1821,10 @@ function applyButlerRightTwoHintAndReveal(cards){
 
   const hasButler = cards.includes('執事');
   const revealed = state.butlerHandReveals?.[state.userId]?.cards || null;
+  const revealWindowOpen = isButlerRevealWindowOpen();
 
   const right2 = els.slice(-2);
-  if (revealed && right2.length === 2){
+  if (revealWindowOpen && revealed && right2.length === 2){
     // ✅ 自分が公開済み：右2枚を表 + 青枠
     myHandEl.classList.add('butler-blue');
 
@@ -1820,7 +1836,7 @@ function applyButlerRightTwoHintAndReveal(cards){
   }
 
   // ✅ 未公開で、執事が手札にあるなら：右2枚を大小アニメ（クリック誘導）
-  if (hasButler && right2.length === 2){
+  if (revealWindowOpen && hasButler && right2.length === 2){
     right2[0].classList.add('butler-hint');
     right2[1].classList.add('butler-hint');
   }
@@ -1878,6 +1894,7 @@ async function fireButlerRevealIfPossible(){
   if (!state.roomCode) return;
 
   const myId = state.userId;
+  if (!isButlerRevealWindowOpen()) return;
   const cards = Array.isArray(state.hands?.[myId]?.cards) ? state.hands[myId].cards : [];
   if (cards.length < 2) return;
   if (!cards.includes('執事')) return;
@@ -1995,8 +2012,9 @@ function applyButlerRevealOnTag(tag, playerId){
 
   const c1 = br.querySelector('.br1');
   const c2 = br.querySelector('.br2');
-  if (c1) c1.style.backgroundImage = `url('${info.cards[0]}.jpg')`;
-  if (c2) c2.style.backgroundImage = `url('${info.cards[1]}.jpg')`;
+  if (c1) c1.style.backgroundImage = `url('執事.jpg')`;
+  if (c2) c2.style.backgroundImage = '';
+  if (c2) c2.style.display = 'none';
 
   br.classList.add('visible');
 }
