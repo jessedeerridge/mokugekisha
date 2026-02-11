@@ -317,6 +317,31 @@
   .excluded-side-deck .ex.one{ transform:translate(72px, 0px) rotate(0deg); }
   .excluded-side-deck .ex.two{ transform:translate(120px, 0px) rotate(0deg); }
 
+  @keyframes excludedButlerPulse{
+    0%{ transform:scale(1); }
+    50%{ transform:scale(1.12); }
+    100%{ transform:scale(1); }
+  }
+  .excluded-side-deck.butler-active .ex{
+    animation:excludedButlerPulse 620ms ease-in-out infinite;
+    cursor:pointer;
+  }
+  .excluded-side-deck.butler-active .ex.one{
+    transform:translate(72px, 0px) rotate(0deg);
+  }
+  .excluded-side-deck.butler-active .ex.two{
+    transform:translate(120px, 0px) rotate(0deg);
+    animation-delay:100ms;
+  }
+  .excluded-side-deck .ex.revealed{
+    border:1px solid rgba(0,0,0,.65);
+    background:#fff;
+    background-size:cover;
+    background-position:center;
+    background-repeat:no-repeat;
+    animation:none !important;
+  }
+
   .player-tag{
     position:absolute;transform:translate(-50%,-50%);
     padding:4px 8px;border-radius:999px;background:#f8f8f8;
@@ -941,6 +966,11 @@ const state = {
 
   // ✅ NEW: 執事の「右2枚公開」状態（playerId -> {cards:[..], id, at}）
   butlerHandReveals: {},
+
+  // ✅ NEW: 除外札のローカル表示制御
+  excludedCards: [],
+  excludedLocalRevealed: false,
+  voteStarted: false,
 };
 
 const mainEl = document.getElementById('main');
@@ -1146,6 +1176,7 @@ function subscribeDiscussion(){
   onValue(rRef, snap => {
     state.discussion = snap.val() || null;
     renderTimer();
+    updateExcludedSideDeckState();
     if (state.discussion?.startedAt) startLocalTimerLoop();
     else stopLocalTimerLoop();
   });
@@ -1164,7 +1195,10 @@ function subscribeDiscussionEvent(){
 function subscribeVoteEvent(){
   const rRef = ref(db, `rooms/${state.roomCode}/voteEvent`);
   onValue(rRef, snap => {
-    const ev = snap.val();
+    const ev = snap.val() || null;
+    state.voteStarted = !!(ev && ev.id);
+    updateExcludedSideDeckState();
+
     if (!ev || !ev.id) return;
     if (ev.id === lastVoteEventId) return;
     lastVoteEventId = ev.id;
@@ -1235,13 +1269,55 @@ function updatePrestartSideDeck(){
 /* =========================
    ✅ 除外カード表示（消えない／スタート押下でだけ消す）
    ========================= */
+function hasMyButlerCard(){
+  const myCards = Array.isArray(state.hands?.[state.userId]?.cards) ? state.hands[state.userId].cards : [];
+  return myCards.includes('執事');
+}
+
+function isBetweenDiscussionAndVote(){
+  const d = state.discussion;
+  const discussionStarted = !!(d && d.startedAt && d.durationSec);
+  return discussionStarted && !state.voteStarted;
+}
+
+function updateExcludedSideDeckState(){
+  const cards = Array.from(excludedSideDeckEl.querySelectorAll('.ex'));
+  const canPulse = state.excludedShown && hasMyButlerCard() && isBetweenDiscussionAndVote();
+
+  excludedSideDeckEl.classList.toggle('butler-active', canPulse);
+
+  cards.forEach((el, i) => {
+    const canReveal = state.excludedLocalRevealed && Array.isArray(state.excludedCards) && state.excludedCards[i];
+    el.classList.toggle('revealed', !!canReveal);
+    el.style.backgroundImage = canReveal ? `url('${state.excludedCards[i]}.jpg')` : '';
+  });
+}
+
 function showExcludedSideDeck(){
   state.excludedShown = true;
+  state.excludedLocalRevealed = false;
   excludedSideDeckEl.classList.remove('hidden');
+  updateExcludedSideDeckState();
 }
 function hideExcludedSideDeck(){
   state.excludedShown = false;
+  state.excludedLocalRevealed = false;
   excludedSideDeckEl.classList.add('hidden');
+  updateExcludedSideDeckState();
+}
+
+function bindExcludedSideDeckReveal(){
+  excludedSideDeckEl.addEventListener('click', (e) => {
+    const ex = e.target?.closest?.('.ex');
+    if (!ex) return;
+    if (!state.excludedShown) return;
+    if (!hasMyButlerCard()) return;
+    if (!isBetweenDiscussionAndVote()) return;
+    if (!Array.isArray(state.excludedCards) || state.excludedCards.length < 2) return;
+
+    state.excludedLocalRevealed = true;
+    updateExcludedSideDeckState();
+  });
 }
 
 /* =========================
@@ -1373,6 +1449,7 @@ function subscribeHands(){
   onValue(handsRef, snap => {
     state.hands = snap.val() || {};
     renderHands();
+    updateExcludedSideDeckState();
   });
 }
 function subscribeDeckRemaining(){
@@ -1662,7 +1739,11 @@ function subscribeButlerEvent(){
     if (ev.id === lastButlerEventId) return;
     lastButlerEventId = ev.id;
 
+    state.excludedCards = Array.isArray(ev.excludedCards) ? ev.excludedCards.slice(0,2) : [];
+    state.excludedLocalRevealed = false;
+
     await playButlerCinematic();
+    updateExcludedSideDeckState();
   });
 }
 
@@ -2143,6 +2224,8 @@ btnJoin.addEventListener('click', async () => {
   subscribeButlerHandReveal();
 
   updatePrestartSideDeck();
+  state.voteStarted = false;
+  state.excludedCards = [];
   hideExcludedSideDeck();
 
   syncSeatUI();
@@ -2942,6 +3025,8 @@ btnGameStart.addEventListener('click', async () => {
     btnResetRoom.disabled = true;
 
     hideExcludedSideDeck();
+    state.excludedCards = [];
+    state.voteStarted = false;
     await set(ref(db, `rooms/${state.roomCode}/gameStarted`), true);
 
     // ✅ NEW: 議論関連をリセット
@@ -3060,6 +3145,8 @@ btnResetRoom.addEventListener('click', async () => {
 
   clearLocalHandVisuals();
   hideExcludedSideDeck();
+  state.excludedCards = [];
+  state.voteStarted = false;
 
   stopLocalTimerLoop();
   timerCircle.classList.remove('visible');
@@ -3079,6 +3166,7 @@ btnResetRoom.addEventListener('click', async () => {
 function updateDeckVisibilityInit(){ updateDeckVisibility(); }
 updateDeckVisibilityInit();
 bindMyHandDrag();
+bindExcludedSideDeckReveal();
 </script>
 </body>
 </html>
