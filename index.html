@@ -1004,7 +1004,7 @@ async function animateShuffle3(){
   }
 }
 
-async function animateDealCardToPlayer(playerId, remainingCount){
+async function animateDealCardToPlayer(playerId){
   const deckWrap = playerCircle.querySelector('[data-role="deck"]');
   if(!deckWrap) return;
   const target = getDealTargetPoint(playerId);
@@ -1034,9 +1034,17 @@ async function animateDealCardToPlayer(playerId, remainingCount){
   });
 
   await wait(380);
-  const badge = deckWrap.querySelector('[data-role="deck-count"]');
-  if(badge) badge.textContent = String(Math.max(remainingCount, 0));
-  fly.remove();
+  return fly;
+}
+
+async function completeDealCardAnimation(fly, remainingCount){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(deckWrap){
+    const badge = deckWrap.querySelector('[data-role="deck-count"]');
+    if(badge) badge.textContent = String(Math.max(remainingCount, 0));
+  }
+  await wait(60);
+  if(fly) fly.remove();
 }
 
 function renderPlayerCircle(players){
@@ -1179,6 +1187,8 @@ async function dealInitialHands(){
   resetPatch[`${base}/deck`] = enabledCards.slice();
   resetPatch[`${base}/startPlayerId`] = null;
   await update(ref(db), resetPatch);
+  state.hands = {};
+  renderHands();
   await wait(80);
 
   await animateShuffle3();
@@ -1194,8 +1204,12 @@ async function dealInitialHands(){
   for (let i = 0; i < 2; i++){
     if(deck.length === 0) deck = shuffle(enabledCards);
     const drawn = deck.pop();
+    const fly = await animateDealCardToPlayer(startPlayerId);
+
     hands[startPlayerId].cards.push(drawn);
-    await animateDealCardToPlayer(startPlayerId, deck.length);
+    state.hands = hands;
+    renderHands();
+    await completeDealCardAnimation(fly, deck.length);
   }
 
   const patch = {};
