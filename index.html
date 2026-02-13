@@ -556,7 +556,6 @@ let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
 let lastTransferAnimationId = null;
-let activeDragPreviewEl = null;
 let isTransferringCard = false;
 
 // ========= ユーティリティ =========
@@ -780,26 +779,10 @@ function renderMyHand(){
         e.dataTransfer.setData('text/plain', String(idx));
         e.dataTransfer.effectAllowed = 'move';
 
-        const preview = card.cloneNode(true);
-        preview.style.position = 'fixed';
-        preview.style.left = '-9999px';
-        preview.style.top = '-9999px';
-        preview.style.pointerEvents = 'none';
-        preview.style.transform = 'none';
-        preview.style.opacity = '1';
-        preview.classList.remove('dragging');
-        document.body.appendChild(preview);
-        activeDragPreviewEl = preview;
-        e.dataTransfer.setDragImage(preview, 30, 45);
-
         card.classList.add('dragging');
       });
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
-        if(activeDragPreviewEl){
-          activeDragPreviewEl.remove();
-          activeDragPreviewEl = null;
-        }
       });
     }
 
