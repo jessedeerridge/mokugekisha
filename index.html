@@ -1032,7 +1032,7 @@ function getDeckCenterPoint(){
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-async function animateDealCardToPlayer(playerId, remainingCount){
+async function animateDealCardToPlayer(playerId){
   const from = getDeckCenterPoint();
   const to = getDealTargetPoint(playerId);
   if(!from || !to) return;
@@ -1063,9 +1063,7 @@ async function animateDealCardToPlayer(playerId, remainingCount){
   });
 
   await anim.finished.catch(() => {});
-  setDeckBadgeCount(remainingCount);
-  await wait(70);
-  fly.remove();
+  return fly;
 }
 
 async function waitForAnimationLayout(startPlayerId){
@@ -1078,6 +1076,18 @@ async function waitForAnimationLayout(startPlayerId){
   return false;
 }
 
+function applyLocalDealPreview(playerId, cardName){
+  if(!playerId) return;
+  const nextHands = { ...state.hands };
+  const base = nextHands[playerId] && Array.isArray(nextHands[playerId].cards)
+    ? nextHands[playerId].cards.slice()
+    : [];
+  if(cardName) base.push(cardName);
+  nextHands[playerId] = { cards: base };
+  state.hands = nextHands;
+  renderHands();
+}
+
 async function runStartAnimation(animData){
   if(!animData || !animData.id) return;
   if(runningStartAnimationId === animData.id) return;
@@ -1086,6 +1096,7 @@ async function runStartAnimation(animData){
   const deals = Number(animData.deals || 2);
   const initialDeckCount = Number(animData.initialDeckCount || 0);
   const startPlayerId = animData.startPlayerId;
+  const drawnCards = Array.isArray(animData.drawnCards) ? animData.drawnCards : [];
 
   try {
     const ready = await waitForAnimationLayout(startPlayerId);
@@ -1095,8 +1106,14 @@ async function runStartAnimation(animData){
     await animateShuffle3();
 
     for(let i = 0; i < deals; i++){
+      const dealtName = drawnCards[i] || null;
       const remaining = Math.max(initialDeckCount - (i + 1), 0);
-      await animateDealCardToPlayer(startPlayerId, remaining);
+      const fly = await animateDealCardToPlayer(startPlayerId);
+      applyLocalDealPreview(startPlayerId, dealtName);
+      await wait(40);
+      setDeckBadgeCount(remaining);
+      await wait(70);
+      if(fly) fly.remove();
     }
   } finally {
     if(runningStartAnimationId === animData.id) runningStartAnimationId = null;
@@ -1250,6 +1267,11 @@ async function dealInitialHands(){
 
   let deck = shuffle(enabledCards);
   const startPlayerId = players[Math.floor(Math.random() * players.length)];
+  const drawnCards = [];
+  for (let i = 0; i < 2; i++){
+    if(deck.length === 0) deck = shuffle(enabledCards);
+    drawnCards.push(deck.pop());
+  }
   const startAnimationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const animPatch = {};
@@ -1258,6 +1280,7 @@ async function dealInitialHands(){
     status: 'run',
     startPlayerId,
     deals: 2,
+    drawnCards,
     initialDeckCount: enabledCards.length,
     createdAt: Date.now()
   };
@@ -1269,12 +1292,7 @@ async function dealInitialHands(){
   players.forEach(pid => {
     hands[pid] = { cards: [] };
   });
-
-  for (let i = 0; i < 2; i++){
-    if(deck.length === 0) deck = shuffle(enabledCards);
-    const drawn = deck.pop();
-    hands[startPlayerId].cards.push(drawn);
-  }
+  hands[startPlayerId].cards = drawnCards.slice();
 
   const patch = {};
   patch[`rooms/${state.roomCode}/hands`] = hands;
