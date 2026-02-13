@@ -245,6 +245,11 @@
   .card.dragging-source{
     visibility:hidden;
   }
+  .card.drag-preview{
+    opacity:1 !important;
+    visibility:visible !important;
+    filter:none !important;
+  }
   .card img{
     width:100%;
     height:100%;
@@ -727,15 +732,23 @@ function subscribeStartAnimation(){
 // ========= 手札描画（画像表示） =========
 function createDragImage(cardEl){
   const ghost = cardEl.cloneNode(true);
-  ghost.style.position = 'fixed';
-  ghost.style.left = '-9999px';
-  ghost.style.top = '-9999px';
-  ghost.style.margin = '0';
-  ghost.style.visibility = 'visible';
   ghost.classList.remove('dragging-source');
+  ghost.classList.add('drag-preview');
+  ghost.style.position = 'fixed';
+  ghost.style.left = '0';
+  ghost.style.top = '0';
+  ghost.style.transform = 'translate(-200vw, -200vh)';
+  ghost.style.margin = '0';
+  ghost.style.opacity = '1';
+  ghost.style.visibility = 'visible';
+  ghost.style.pointerEvents = 'none';
 
   const ghostImg = ghost.querySelector('img');
-  if(ghostImg) ghostImg.draggable = false;
+  if(ghostImg){
+    ghostImg.draggable = false;
+    ghostImg.loading = 'eager';
+    ghostImg.decoding = 'sync';
+  }
 
   document.body.appendChild(ghost);
   return ghost;
