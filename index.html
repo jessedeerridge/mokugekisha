@@ -1320,6 +1320,7 @@ async function transferCardToNextPlayer(cardIndex){
   if(!movingCard) return;
 
   isTransferringCard = true;
+  const prevHands = state.hands;
   try {
     const nextHand = state.hands[nextPlayerId] && Array.isArray(state.hands[nextPlayerId].cards)
       ? state.hands[nextPlayerId].cards.slice()
@@ -1327,6 +1328,13 @@ async function transferCardToNextPlayer(cardIndex){
 
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const afterTransfer = [...nextHand, movingCard];
+
+    state.hands = {
+      ...state.hands,
+      [state.userId]: { cards: myFinal },
+      [nextPlayerId]: { cards: afterTransfer }
+    };
+    renderHands();
 
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
@@ -1359,6 +1367,10 @@ async function transferCardToNextPlayer(cardIndex){
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: [drawCard, ...afterTransfer],
       [`rooms/${state.roomCode}/deck`]: deck.slice(0, -1)
     });
+  } catch (err) {
+    state.hands = prevHands;
+    renderHands();
+    throw err;
   } finally {
     isTransferringCard = false;
     cleanupPointerDragState();
