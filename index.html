@@ -252,7 +252,8 @@
   }
   .card.transfer-ready.dragging{
     animation:none;
-    visibility:hidden;
+    opacity:0;
+    pointer-events:none;
   }
   .card img{
     width:100%;
@@ -612,6 +613,7 @@ function renderHelpGrid(){
     img.alt = name;
     img.src = cardImg(name);
     img.loading = 'lazy';
+    img.draggable = false;
     card.appendChild(img);
 
     const cap = document.createElement('div');
@@ -766,6 +768,7 @@ function renderMyHand(){
     img.alt = name;
     img.src = cardImg(name);
     img.loading = 'lazy';
+    img.draggable = false;
 
     card.appendChild(img);
 
