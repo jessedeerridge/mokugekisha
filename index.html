@@ -78,11 +78,6 @@
     outline:2px dashed #2563eb;
     outline-offset:3px;
   }
-  .player-tag.next-turn-target.drop-ready{
-    background:#2563eb;
-    color:#fff;
-    border-color:#2563eb;
-  }
 
   /* =========================
      ★ 山札（プレイヤーサークル中心）
@@ -202,6 +197,19 @@
     height:var(--zone-circle-size);
     pointer-events:none;
   }
+  .player-tag .mini-hand.next-turn-dropzone{
+    pointer-events:auto;
+  }
+  .player-tag .mini-hand.next-turn-dropzone::before{
+    border-color:#2563eb;
+    border-style:solid;
+    transition:all 160ms ease;
+  }
+  .player-tag .mini-hand.next-turn-dropzone.drop-ready::before{
+    border-color:#1d4ed8;
+    background:rgba(37,99,235,.18);
+    transform:translate(-50%,-50%) scale(1.08);
+  }
   .player-tag .mini-card{
     position:absolute;left:50%;top:8px;
     width:54px;height:81px;
@@ -238,6 +246,15 @@
     overflow:hidden;
     display:flex;align-items:center;justify-content:center;
     user-select:none;
+  }
+  .card.transferable{
+    cursor:grab;
+    animation:transferPulse 850ms ease-in-out infinite;
+  }
+  .card.transferable:active{cursor:grabbing;}
+  @keyframes transferPulse{
+    0%,100%{transform:scale(1);}
+    50%{transform:scale(1.08);}
   }
   .card img{
     width:100%;
@@ -724,7 +741,11 @@ function renderMyHand(){
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
 
-  const canTransfer = handData.cards.length === 2 && !!getNextPlayerId();
+  const canTransfer =
+    handData.cards.length === 2 &&
+    !!getNextPlayerId() &&
+    state.room &&
+    state.room.startPlayerId === myId;
 
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
@@ -738,8 +759,8 @@ function renderMyHand(){
     card.appendChild(img);
 
     if(canTransfer){
+      card.classList.add('transferable');
       card.draggable = true;
-      card.style.cursor = 'grab';
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', String(idx));
         e.dataTransfer.effectAllowed = 'move';
@@ -1163,6 +1184,7 @@ async function transferCardToNextPlayer(cardIndex){
     ? state.hands[state.userId].cards.slice()
     : [];
   if(myHand.length !== 2) return;
+  if(state.room.startPlayerId !== state.userId) return;
 
   const movingCard = myHand[cardIndex];
   if(!movingCard) return;
@@ -1186,18 +1208,21 @@ async function transferCardToNextPlayer(cardIndex){
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
     const deckFinal = drawCard ? deck.slice(0, -1) : deck;
-    const nextFinal = drawCard ? [drawCard, ...afterTransfer] : afterTransfer;
+    const patchTransfer = {};
+    patchTransfer[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
+    patchTransfer[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = afterTransfer;
+    await update(ref(db), patchTransfer);
 
     if(drawCard){
+      await wait(120);
       const fly = await animateDealCardToPlayer(nextPlayerId);
       if(fly) fly.remove();
-    }
 
-    const patch = {};
-    patch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
-    patch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
-    patch[`rooms/${state.roomCode}/deck`] = deckFinal;
-    await update(ref(db), patch);
+      const patchDraw = {};
+      patchDraw[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = [drawCard, ...afterTransfer];
+      patchDraw[`rooms/${state.roomCode}/deck`] = deckFinal;
+      await update(ref(db), patchDraw);
+    }
   } finally {
     isTransferringCard = false;
   }
@@ -1285,27 +1310,8 @@ function renderPlayerCircle(players){
     tag.style.top = `${y}%`;
 
     const nextPlayerId = getNextPlayerId();
-    if(p.id === nextPlayerId){
-      tag.classList.add('next-turn-target');
-      tag.addEventListener('dragover', (e) => {
-        const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
-          ? state.hands[state.userId].cards
-          : [];
-        if(myHand.length !== 2) return;
-        e.preventDefault();
-        tag.classList.add('drop-ready');
-      });
-      tag.addEventListener('dragleave', () => {
-        tag.classList.remove('drop-ready');
-      });
-      tag.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        tag.classList.remove('drop-ready');
-        const idx = Number(e.dataTransfer.getData('text/plain'));
-        if(Number.isNaN(idx)) return;
-        await transferCardToNextPlayer(idx);
-      });
-    }
+    const isNextPlayer = p.id === nextPlayerId;
+    if(isNextPlayer) tag.classList.add('next-turn-target');
 
     tag.onclick = () => {
       if (p.id === state.userId) return;
@@ -1322,6 +1328,27 @@ function renderPlayerCircle(players){
     if (p.id !== state.userId){
       const miniHand = document.createElement('div');
       miniHand.className = 'mini-hand';
+      if(isNextPlayer && state.room.startPlayerId === state.userId){
+        miniHand.classList.add('next-turn-dropzone');
+        miniHand.addEventListener('dragover', (e) => {
+          const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+            ? state.hands[state.userId].cards
+            : [];
+          if(myHand.length !== 2) return;
+          e.preventDefault();
+          miniHand.classList.add('drop-ready');
+        });
+        miniHand.addEventListener('dragleave', () => {
+          miniHand.classList.remove('drop-ready');
+        });
+        miniHand.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          miniHand.classList.remove('drop-ready');
+          const idx = Number(e.dataTransfer.getData('text/plain'));
+          if(Number.isNaN(idx)) return;
+          await transferCardToNextPlayer(idx);
+        });
+      }
 
       const handData = state.hands[p.id];
       const cards = (handData && Array.isArray(handData.cards)) ? handData.cards : [];
@@ -1459,6 +1486,7 @@ async function dealInitialHands(){
   patch[`rooms/${state.roomCode}/hands`] = hands;
   patch[`rooms/${state.roomCode}/deck`]  = deck;
   patch[`rooms/${state.roomCode}/startPlayerId`] = startPlayerId;
+  patch[`rooms/${state.roomCode}/startAnimation/status`] = 'done';
   await update(ref(db), patch);
 }
 
