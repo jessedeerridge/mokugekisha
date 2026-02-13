@@ -83,6 +83,14 @@
     color:#fff;
     border-color:#2563eb;
   }
+  .player-tag .mini-hand.next-turn-drop{
+    pointer-events:auto;
+  }
+  .player-tag .mini-hand.next-turn-drop.drop-ready::before{
+    border-color:#2563eb;
+    border-width:3px;
+    background:rgba(37,99,235,.14);
+  }
 
   /* =========================
      ★ 山札（プレイヤーサークル中心）
@@ -239,6 +247,13 @@
     display:flex;align-items:center;justify-content:center;
     user-select:none;
   }
+  .card.transfer-ready{
+    animation:my-card-pulse 1s ease-in-out infinite;
+  }
+  .card.transfer-ready.dragging{
+    animation:none;
+    opacity:.45;
+  }
   .card img{
     width:100%;
     height:100%;
@@ -246,6 +261,10 @@
     display:block;
     transform: scale(1.1);
     transform-origin: center;
+  }
+  @keyframes my-card-pulse{
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.08); }
   }
 
   /* ★ 追い出し確認ダイアログ */
@@ -738,11 +757,16 @@ function renderMyHand(){
     card.appendChild(img);
 
     if(canTransfer){
+      card.classList.add('transfer-ready');
       card.draggable = true;
       card.style.cursor = 'grab';
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', String(idx));
         e.dataTransfer.effectAllowed = 'move';
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
       });
     }
 
@@ -1007,7 +1031,8 @@ function getDealTargetPoint(playerId){
   }
   const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
   if(tag){
-    const rect = tag.getBoundingClientRect();
+    const miniHand = tag.querySelector('.mini-hand');
+    const rect = (miniHand || tag).getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.bottom + 50 };
   }
   return null;
@@ -1183,6 +1208,13 @@ async function transferCardToNextPlayer(cardIndex){
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const afterTransfer = [...nextHand, movingCard];
 
+    const transferPatch = {};
+    transferPatch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
+    transferPatch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = afterTransfer;
+    await update(ref(db), transferPatch);
+
+    await wait(200);
+
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
     const deckFinal = drawCard ? deck.slice(0, -1) : deck;
@@ -1191,13 +1223,12 @@ async function transferCardToNextPlayer(cardIndex){
     if(drawCard){
       const fly = await animateDealCardToPlayer(nextPlayerId);
       if(fly) fly.remove();
-    }
 
-    const patch = {};
-    patch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
-    patch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
-    patch[`rooms/${state.roomCode}/deck`] = deckFinal;
-    await update(ref(db), patch);
+      const drawPatch = {};
+      drawPatch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
+      drawPatch[`rooms/${state.roomCode}/deck`] = deckFinal;
+      await update(ref(db), drawPatch);
+    }
   } finally {
     isTransferringCard = false;
   }
@@ -1287,36 +1318,7 @@ function renderPlayerCircle(players){
     const nextPlayerId = getNextPlayerId();
     if(p.id === nextPlayerId){
       tag.classList.add('next-turn-target');
-      tag.addEventListener('dragover', (e) => {
-        const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
-          ? state.hands[state.userId].cards
-          : [];
-        if(myHand.length !== 2) return;
-        e.preventDefault();
-        tag.classList.add('drop-ready');
-      });
-      tag.addEventListener('dragleave', () => {
-        tag.classList.remove('drop-ready');
-      });
-      tag.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        tag.classList.remove('drop-ready');
-        const idx = Number(e.dataTransfer.getData('text/plain'));
-        if(Number.isNaN(idx)) return;
-        await transferCardToNextPlayer(idx);
-      });
     }
-
-    tag.onclick = () => {
-      if (p.id === state.userId) return;
-      if (!state.roomCode) return;
-      if (state.seatedTable !== null) return;
-
-      pendingSeatIndexToSteal = p.seatIndex;
-      pendingSeatPlayerIdToSteal = p.id;
-      kickMessage.textContent = `「${p.name}」を追い出して、この席に着席しますか？`;
-      kickDialog.classList.remove('hidden');
-    };
 
     // 他プレイヤーの手札位置は常に表示し、手札があれば裏面カードを重ねる
     if (p.id !== state.userId){
@@ -1345,9 +1347,48 @@ function renderPlayerCircle(players){
         miniHand.appendChild(card);
       });
 
+      if(p.id === nextPlayerId){
+        miniHand.classList.add('next-turn-drop');
+      }
+
       tag.appendChild(miniHand);
     }
 
+    if(p.id === nextPlayerId){
+      const dropTarget = tag.querySelector('.mini-hand') || tag;
+      dropTarget.addEventListener('dragover', (e) => {
+        const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+          ? state.hands[state.userId].cards
+          : [];
+        if(myHand.length !== 2) return;
+        e.preventDefault();
+        tag.classList.add('drop-ready');
+        dropTarget.classList.add('drop-ready');
+      });
+      dropTarget.addEventListener('dragleave', () => {
+        tag.classList.remove('drop-ready');
+        dropTarget.classList.remove('drop-ready');
+      });
+      dropTarget.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        tag.classList.remove('drop-ready');
+        dropTarget.classList.remove('drop-ready');
+        const idx = Number(e.dataTransfer.getData('text/plain'));
+        if(Number.isNaN(idx)) return;
+        await transferCardToNextPlayer(idx);
+      });
+    }
+
+    tag.onclick = () => {
+      if (p.id === state.userId) return;
+      if (!state.roomCode) return;
+      if (state.seatedTable !== null) return;
+
+      pendingSeatIndexToSteal = p.seatIndex;
+      pendingSeatPlayerIdToSteal = p.id;
+      kickMessage.textContent = `「${p.name}」を追い出して、この席に着席しますか？`;
+      kickDialog.classList.remove('hidden');
+    };
     playerCircle.appendChild(tag);
   });
 }
