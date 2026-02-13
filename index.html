@@ -1030,12 +1030,16 @@ function getDealTargetPoint(playerId){
     return { x: rect.left + rect.width / 2, y: rect.top + 42 };
   }
   const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
-  if(tag){
-    const miniHand = tag.querySelector('.mini-hand');
-    const rect = (miniHand || tag).getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.bottom + 50 };
+  if(!tag) return null;
+
+  const miniHand = tag.querySelector('.mini-hand');
+  if(miniHand){
+    const rect = miniHand.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
-  return null;
+
+  const rect = tag.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.bottom + 46 };
 }
 
 async function animateShuffle3(){
@@ -1172,13 +1176,6 @@ function getNextPlayerId(){
   return next ? next.id : null;
 }
 
-function getPlayerTagPoint(playerId){
-  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
-  if(!tag) return null;
-  const rect = tag.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.bottom + 46 };
-}
-
 async function transferCardToNextPlayer(cardIndex){
   if(isTransferringCard || !state.roomCode) return;
   const nextPlayerId = getNextPlayerId();
@@ -1197,7 +1194,7 @@ async function transferCardToNextPlayer(cardIndex){
     const fromCard = myHandEl.children[cardIndex];
     const fromRect = fromCard ? fromCard.getBoundingClientRect() : null;
     const fromPoint = fromRect ? { x: fromRect.left + fromRect.width / 2, y: fromRect.top + fromRect.height / 2 } : null;
-    const toPoint = getPlayerTagPoint(nextPlayerId);
+    const toPoint = getDealTargetPoint(nextPlayerId);
 
     await animateMoveCardByPoint(fromPoint, toPoint, cardImg(movingCard), '譲渡カード');
 
