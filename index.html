@@ -243,7 +243,9 @@
     user-select:none;
   }
   .card.dragging-source{
-    visibility:hidden;
+    visibility:visible;
+    opacity:1;
+    filter:none;
   }
   .card img{
     width:100%;
@@ -732,6 +734,8 @@ function createDragImage(cardEl){
   ghost.style.top = '-9999px';
   ghost.style.margin = '0';
   ghost.style.visibility = 'visible';
+  ghost.style.opacity = '1';
+  ghost.style.filter = 'none';
   ghost.classList.remove('dragging-source');
 
   const ghostImg = ghost.querySelector('img');
