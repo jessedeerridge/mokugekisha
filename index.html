@@ -556,6 +556,7 @@ let runningStartAnimationId = null;
 let lastTransferAnimationId = null;
 let isTransferringCard = false;
 let activePointerDrag = null;
+const TRANSFER_TO_DRAW_DELAY_MS = 900;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -745,12 +746,14 @@ function subscribeTransferAnimation(){
     lastTransferAnimationId = data.id;
 
     (async () => {
-      if(data.fromPlayerId && data.toPlayerId){
+      const isDraggingPlayer = data.fromPlayerId && state.userId && data.fromPlayerId === state.userId;
+      if(data.fromPlayerId && data.toPlayerId && !isDraggingPlayer){
         const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
         if(transferFly) transferFly.remove();
       }
 
       if(data.hasDrawCard && data.toPlayerId){
+        await wait(TRANSFER_TO_DRAW_DELAY_MS);
         const drawFly = await animateDealCardToPlayer(data.toPlayerId);
         if(drawFly) drawFly.remove();
       }
@@ -1317,6 +1320,7 @@ async function transferCardToNextPlayer(cardIndex){
   if(!movingCard) return;
 
   isTransferringCard = true;
+  const prevHands = state.hands;
   try {
     const nextHand = state.hands[nextPlayerId] && Array.isArray(state.hands[nextPlayerId].cards)
       ? state.hands[nextPlayerId].cards.slice()
@@ -1324,6 +1328,13 @@ async function transferCardToNextPlayer(cardIndex){
 
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const afterTransfer = [...nextHand, movingCard];
+
+    state.hands = {
+      ...state.hands,
+      [state.userId]: { cards: myFinal },
+      [nextPlayerId]: { cards: afterTransfer }
+    };
+    renderHands();
 
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
@@ -1350,12 +1361,16 @@ async function transferCardToNextPlayer(cardIndex){
 
     if(!drawCard) return;
 
-    await wait(320);
+    await wait(TRANSFER_TO_DRAW_DELAY_MS);
 
     await update(ref(db), {
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: [drawCard, ...afterTransfer],
       [`rooms/${state.roomCode}/deck`]: deck.slice(0, -1)
     });
+  } catch (err) {
+    state.hands = prevHands;
+    renderHands();
+    throw err;
   } finally {
     isTransferringCard = false;
     cleanupPointerDragState();
