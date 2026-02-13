@@ -1142,38 +1142,6 @@ async function animateDealCardToPlayer(playerId){
   return fly;
 }
 
-async function animateMoveCardByPoint(from, to, imageSrc, altText = '移動カード'){
-  if(!from || !to) return;
-  const fly = document.createElement('div');
-  fly.className = 'deal-fly-card';
-
-  const img = document.createElement('img');
-  img.alt = altText;
-  img.src = imageSrc;
-  fly.appendChild(img);
-
-  fly.style.left = `${from.x}px`;
-  fly.style.top = `${from.y}px`;
-  fly.style.transform = 'translate(-50%, -50%)';
-  fly.style.opacity = '1';
-  document.body.appendChild(fly);
-
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const anim = fly.animate([
-    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
-    { transform: `translate(-50%, -50%) translate(${dx * 0.55}px, ${dy * 0.55 - 18}px) rotate(8deg) scale(1.03)`, opacity: 1 },
-    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(12deg) scale(0.98)`, opacity: 0.98 }
-  ], {
-    duration: 420,
-    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-    fill: 'forwards'
-  });
-
-  await anim.finished.catch(() => {});
-  fly.remove();
-}
-
 function getNextPlayerId(){
   const n = latestPlayers.length;
   if(n < 2) return null;
@@ -1181,13 +1149,6 @@ function getNextPlayerId(){
   if(myIndex === -1) return null;
   const next = latestPlayers[(myIndex + 1) % n];
   return next ? next.id : null;
-}
-
-function getPlayerTagPoint(playerId){
-  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
-  if(!tag) return null;
-  const rect = tag.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.bottom + 46 };
 }
 
 async function transferCardToNextPlayer(cardIndex){
@@ -1205,13 +1166,6 @@ async function transferCardToNextPlayer(cardIndex){
 
   isTransferringCard = true;
   try {
-    const fromCard = myHandEl.children[cardIndex];
-    const fromRect = fromCard ? fromCard.getBoundingClientRect() : null;
-    const fromPoint = fromRect ? { x: fromRect.left + fromRect.width / 2, y: fromRect.top + fromRect.height / 2 } : null;
-    const toPoint = getPlayerTagPoint(nextPlayerId);
-
-    await animateMoveCardByPoint(fromPoint, toPoint, cardImg(movingCard), '譲渡カード');
-
     const nextHand = state.hands[nextPlayerId] && Array.isArray(state.hands[nextPlayerId].cards)
       ? state.hands[nextPlayerId].cards.slice()
       : [];
