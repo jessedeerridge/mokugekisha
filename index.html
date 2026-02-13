@@ -2576,14 +2576,15 @@ async function pickRandomStarterAndSetTurn(){
   players.forEach(p => { hands[p.id] = { cards: [] }; });
 
   const turnId = crypto.randomUUID();
-  await Promise.all([
-    set(ref(db, `rooms/${state.roomCode}/hands`), hands),
-    set(ref(db, `rooms/${state.roomCode}/starterPlayerId`), picked.id),
-    remove(ref(db, `rooms/${state.roomCode}/starterExtraGiven`)),
-    remove(ref(db, `rooms/${state.roomCode}/deckCircleCard`)),
-    set(ref(db, `rooms/${state.roomCode}/activeTurn`), { id: turnId, playerId: picked.id, at: Date.now() }),
-    remove(ref(db, `rooms/${state.roomCode}/turnDrawnTurnId`)),
-  ]);
+  const base = `rooms/${state.roomCode}`;
+  await update(ref(db), {
+    [`${base}/hands`]: hands,
+    [`${base}/starterPlayerId`]: picked.id,
+    [`${base}/starterExtraGiven`]: null,
+    [`${base}/deckCircleCard`]: null,
+    [`${base}/activeTurn`]: { id: turnId, playerId: picked.id, at: Date.now() },
+    [`${base}/turnDrawnTurnId`]: null,
+  });
 }
 
 function getNextPlayerId(currentId){
