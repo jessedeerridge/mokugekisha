@@ -724,7 +724,7 @@ function renderMyHand(){
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
 
-  const canTransfer = handData.cards.length === 2 && !!getNextPlayerId();
+  const canTransfer = canCurrentPlayerTransfer();
 
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
@@ -1147,6 +1147,18 @@ function getNextPlayerId(){
   return next ? next.id : null;
 }
 
+function canCurrentPlayerTransfer(){
+  const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+    ? state.hands[state.userId].cards
+    : [];
+  return (
+    state.room &&
+    state.room.startPlayerId === state.userId &&
+    myHand.length === 2 &&
+    !!getNextPlayerId()
+  );
+}
+
 function getPlayerTagPoint(playerId){
   const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
   if(!tag) return null;
@@ -1156,6 +1168,7 @@ function getPlayerTagPoint(playerId){
 
 async function transferCardToNextPlayer(cardIndex){
   if(isTransferringCard || !state.roomCode) return;
+  if(!canCurrentPlayerTransfer()) return;
   const nextPlayerId = getNextPlayerId();
   if(!nextPlayerId || nextPlayerId === state.userId) return;
 
@@ -1183,21 +1196,27 @@ async function transferCardToNextPlayer(cardIndex){
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const afterTransfer = [...nextHand, movingCard];
 
+    const transferPatch = {};
+    transferPatch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
+    transferPatch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = afterTransfer;
+    await update(ref(db), transferPatch);
+
+    await wait(140);
+
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
-    const deckFinal = drawCard ? deck.slice(0, -1) : deck;
-    const nextFinal = drawCard ? [drawCard, ...afterTransfer] : afterTransfer;
+    if(!drawCard) return;
 
-    if(drawCard){
-      const fly = await animateDealCardToPlayer(nextPlayerId);
-      if(fly) fly.remove();
-    }
+    const fly = await animateDealCardToPlayer(nextPlayerId);
+    if(fly) fly.remove();
 
-    const patch = {};
-    patch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
-    patch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
-    patch[`rooms/${state.roomCode}/deck`] = deckFinal;
-    await update(ref(db), patch);
+    const latestTargetHand = state.hands[nextPlayerId] && Array.isArray(state.hands[nextPlayerId].cards)
+      ? state.hands[nextPlayerId].cards.slice()
+      : [];
+    const drawPatch = {};
+    drawPatch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = [drawCard, ...latestTargetHand];
+    drawPatch[`rooms/${state.roomCode}/deck`] = deck.slice(0, -1);
+    await update(ref(db), drawPatch);
   } finally {
     isTransferringCard = false;
   }
@@ -1285,7 +1304,7 @@ function renderPlayerCircle(players){
     tag.style.top = `${y}%`;
 
     const nextPlayerId = getNextPlayerId();
-    if(p.id === nextPlayerId){
+    if(canCurrentPlayerTransfer() && p.id === nextPlayerId){
       tag.classList.add('next-turn-target');
       tag.addEventListener('dragover', (e) => {
         const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
