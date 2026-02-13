@@ -243,7 +243,7 @@
     user-select:none;
   }
   .card.dragging-source{
-    opacity:0;
+    visibility:hidden;
   }
   .card img{
     width:100%;
@@ -542,6 +542,7 @@ let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
 let isTransferringCard = false;
+let activeDragSourceCard = null;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -724,22 +725,26 @@ function subscribeStartAnimation(){
 }
 
 // ========= 手札描画（画像表示） =========
-function createDragImage(cardName){
-  const ghost = document.createElement('div');
-  ghost.className = 'card';
+function createDragImage(cardEl){
+  const ghost = cardEl.cloneNode(true);
   ghost.style.position = 'fixed';
   ghost.style.left = '-9999px';
   ghost.style.top = '-9999px';
   ghost.style.margin = '0';
+  ghost.style.visibility = 'visible';
+  ghost.classList.remove('dragging-source');
 
-  const ghostImg = document.createElement('img');
-  ghostImg.alt = cardName;
-  ghostImg.src = cardImg(cardName);
-  ghostImg.draggable = false;
-  ghost.appendChild(ghostImg);
+  const ghostImg = ghost.querySelector('img');
+  if(ghostImg) ghostImg.draggable = false;
 
   document.body.appendChild(ghost);
   return ghost;
+}
+
+function clearActiveDragSource(){
+  if(!activeDragSourceCard) return;
+  activeDragSourceCard.classList.remove('dragging-source');
+  activeDragSourceCard = null;
 }
 
 function renderMyHand(){
@@ -768,16 +773,20 @@ function renderMyHand(){
         e.dataTransfer.setData('text/plain', String(idx));
         e.dataTransfer.effectAllowed = 'move';
 
-        const dragImage = createDragImage(name);
+        const dragImage = createDragImage(card);
         e.dataTransfer.setDragImage(dragImage, 30, 45);
 
+        clearActiveDragSource();
+        activeDragSourceCard = card;
         requestAnimationFrame(() => {
-          card.classList.add('dragging-source');
+          if(activeDragSourceCard === card) card.classList.add('dragging-source');
         });
 
         card.addEventListener('dragend', () => {
-          card.classList.remove('dragging-source');
           dragImage.remove();
+          setTimeout(() => {
+            if(!isTransferringCard) clearActiveDragSource();
+          }, 0);
         }, { once:true });
       });
     }
@@ -1190,6 +1199,7 @@ async function transferCardToNextPlayer(cardIndex){
     await update(ref(db), patch);
   } finally {
     isTransferringCard = false;
+    clearActiveDragSource();
   }
 }
 
