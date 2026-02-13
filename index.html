@@ -74,6 +74,15 @@
     z-index:20;
   }
   .player-tag.me{ background:#111;color:#fff;border-color:#111; }
+  .player-tag.next-turn-target{
+    outline:2px dashed #2563eb;
+    outline-offset:3px;
+  }
+  .player-tag.next-turn-target.drop-ready{
+    background:#2563eb;
+    color:#fff;
+    border-color:#2563eb;
+  }
 
   /* =========================
      ★ 山札（プレイヤーサークル中心）
@@ -508,6 +517,7 @@ let latestPlayers = [];
 let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
+let isTransferringCard = false;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -696,7 +706,9 @@ function renderMyHand(){
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
 
-  handData.cards.forEach(name => {
+  const canTransfer = handData.cards.length === 2 && !!getNextPlayerId();
+
+  handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
     card.className = 'card';
 
@@ -706,6 +718,16 @@ function renderMyHand(){
     img.loading = 'lazy';
 
     card.appendChild(img);
+
+    if(canTransfer){
+      card.draggable = true;
+      card.style.cursor = 'grab';
+      card.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', String(idx));
+        e.dataTransfer.effectAllowed = 'move';
+      });
+    }
+
     myHandEl.appendChild(card);
   });
 }
@@ -1066,6 +1088,103 @@ async function animateDealCardToPlayer(playerId){
   return fly;
 }
 
+async function animateMoveCardByPoint(from, to, imageSrc, altText = '移動カード'){
+  if(!from || !to) return;
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+
+  const img = document.createElement('img');
+  img.alt = altText;
+  img.src = imageSrc;
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  fly.style.opacity = '1';
+  document.body.appendChild(fly);
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx * 0.55}px, ${dy * 0.55 - 18}px) rotate(8deg) scale(1.03)`, opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(12deg) scale(0.98)`, opacity: 0.98 }
+  ], {
+    duration: 420,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
+  fly.remove();
+}
+
+function getNextPlayerId(){
+  const n = latestPlayers.length;
+  if(n < 2) return null;
+  const myIndex = latestPlayers.findIndex(p => p.id === state.userId);
+  if(myIndex === -1) return null;
+  const next = latestPlayers[(myIndex + 1) % n];
+  return next ? next.id : null;
+}
+
+function getPlayerTagPoint(playerId){
+  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
+  if(!tag) return null;
+  const rect = tag.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.bottom + 46 };
+}
+
+async function transferCardToNextPlayer(cardIndex){
+  if(isTransferringCard || !state.roomCode) return;
+  const nextPlayerId = getNextPlayerId();
+  if(!nextPlayerId || nextPlayerId === state.userId) return;
+
+  const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+    ? state.hands[state.userId].cards.slice()
+    : [];
+  if(myHand.length !== 2) return;
+
+  const movingCard = myHand[cardIndex];
+  if(!movingCard) return;
+
+  isTransferringCard = true;
+  try {
+    const fromCard = myHandEl.children[cardIndex];
+    const fromRect = fromCard ? fromCard.getBoundingClientRect() : null;
+    const fromPoint = fromRect ? { x: fromRect.left + fromRect.width / 2, y: fromRect.top + fromRect.height / 2 } : null;
+    const toPoint = getPlayerTagPoint(nextPlayerId);
+
+    await animateMoveCardByPoint(fromPoint, toPoint, cardImg(movingCard), '譲渡カード');
+
+    const nextHand = state.hands[nextPlayerId] && Array.isArray(state.hands[nextPlayerId].cards)
+      ? state.hands[nextPlayerId].cards.slice()
+      : [];
+
+    const myFinal = myHand.filter((_, i) => i !== cardIndex);
+    const afterTransfer = [...nextHand, movingCard];
+
+    const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
+    const drawCard = deck.length ? deck[deck.length - 1] : null;
+    const deckFinal = drawCard ? deck.slice(0, -1) : deck;
+    const nextFinal = drawCard ? [drawCard, ...afterTransfer] : afterTransfer;
+
+    if(drawCard){
+      const fly = await animateDealCardToPlayer(nextPlayerId);
+      if(fly) fly.remove();
+    }
+
+    const patch = {};
+    patch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
+    patch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
+    patch[`rooms/${state.roomCode}/deck`] = deckFinal;
+    await update(ref(db), patch);
+  } finally {
+    isTransferringCard = false;
+  }
+}
+
 async function waitForAnimationLayout(startPlayerId){
   for(let i = 0; i < 20; i++){
     const from = getDeckCenterPoint();
@@ -1146,6 +1265,29 @@ function renderPlayerCircle(players){
     tag.textContent = p.name;
     tag.style.left = `${x}%`;
     tag.style.top = `${y}%`;
+
+    const nextPlayerId = getNextPlayerId();
+    if(p.id === nextPlayerId){
+      tag.classList.add('next-turn-target');
+      tag.addEventListener('dragover', (e) => {
+        const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+          ? state.hands[state.userId].cards
+          : [];
+        if(myHand.length !== 2) return;
+        e.preventDefault();
+        tag.classList.add('drop-ready');
+      });
+      tag.addEventListener('dragleave', () => {
+        tag.classList.remove('drop-ready');
+      });
+      tag.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        tag.classList.remove('drop-ready');
+        const idx = Number(e.dataTransfer.getData('text/plain'));
+        if(Number.isNaN(idx)) return;
+        await transferCardToNextPlayer(idx);
+      });
+    }
 
     tag.onclick = () => {
       if (p.id === state.userId) return;
