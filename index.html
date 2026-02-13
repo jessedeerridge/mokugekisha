@@ -74,14 +74,13 @@
     z-index:20;
   }
   .player-tag.me{ background:#111;color:#fff;border-color:#111; }
-  .player-tag.next-turn-target{
-    outline:2px dashed #2563eb;
-    outline-offset:3px;
-  }
-  .player-tag.next-turn-target.drop-ready{
-    background:#2563eb;
-    color:#fff;
+  .player-tag .mini-hand.next-turn-target::before{
     border-color:#2563eb;
+    border-style:solid;
+    border-width:3px;
+  }
+  .player-tag .mini-hand.next-turn-target.drop-ready::before{
+    background:rgba(37,99,235,.14);
   }
 
   /* =========================
@@ -1285,27 +1284,6 @@ function renderPlayerCircle(players){
     tag.style.top = `${y}%`;
 
     const nextPlayerId = getNextPlayerId();
-    if(p.id === nextPlayerId){
-      tag.classList.add('next-turn-target');
-      tag.addEventListener('dragover', (e) => {
-        const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
-          ? state.hands[state.userId].cards
-          : [];
-        if(myHand.length !== 2) return;
-        e.preventDefault();
-        tag.classList.add('drop-ready');
-      });
-      tag.addEventListener('dragleave', () => {
-        tag.classList.remove('drop-ready');
-      });
-      tag.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        tag.classList.remove('drop-ready');
-        const idx = Number(e.dataTransfer.getData('text/plain'));
-        if(Number.isNaN(idx)) return;
-        await transferCardToNextPlayer(idx);
-      });
-    }
 
     tag.onclick = () => {
       if (p.id === state.userId) return;
@@ -1322,6 +1300,28 @@ function renderPlayerCircle(players){
     if (p.id !== state.userId){
       const miniHand = document.createElement('div');
       miniHand.className = 'mini-hand';
+
+      if(p.id === nextPlayerId){
+        miniHand.classList.add('next-turn-target');
+        miniHand.addEventListener('dragover', (e) => {
+          const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+            ? state.hands[state.userId].cards
+            : [];
+          if(myHand.length !== 2) return;
+          e.preventDefault();
+          miniHand.classList.add('drop-ready');
+        });
+        miniHand.addEventListener('dragleave', () => {
+          miniHand.classList.remove('drop-ready');
+        });
+        miniHand.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          miniHand.classList.remove('drop-ready');
+          const idx = Number(e.dataTransfer.getData('text/plain'));
+          if(Number.isNaN(idx)) return;
+          await transferCardToNextPlayer(idx);
+        });
+      }
 
       const handData = state.hands[p.id];
       const cards = (handData && Array.isArray(handData.cards)) ? handData.cards : [];
