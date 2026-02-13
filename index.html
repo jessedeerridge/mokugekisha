@@ -763,10 +763,11 @@ function subscribeTransferAnimation(){
 
 
 // ========= 手札描画（画像表示） =========
-function cleanupPointerDragState(){
+function cleanupPointerDragState(options = {}){
   if(!activePointerDrag) return;
+  const { keepSourceHidden = false } = options;
   const { cardEl, ghostEl, dropTargetEl, pointerId } = activePointerDrag;
-  if(cardEl) cardEl.classList.remove('pointer-dragging-source');
+  if(cardEl && !keepSourceHidden) cardEl.classList.remove('pointer-dragging-source');
   if(ghostEl) ghostEl.remove();
   if(dropTargetEl) dropTargetEl.classList.remove('drop-ready');
   if(cardEl && pointerId != null){
@@ -811,11 +812,14 @@ function updateDropReadyState(clientX, clientY){
 
 async function finishPointerDrag(clientX, clientY){
   if(!activePointerDrag) return;
-  const draggedIndex = activePointerDrag.cardIndex;
-  const shouldDrop = !!activePointerDrag.dropTargetEl;
-  cleanupPointerDragState();
+  const { cardIndex: draggedIndex, dropTargetEl, cardEl } = activePointerDrag;
+  const shouldDrop = !!dropTargetEl;
+  cleanupPointerDragState({ keepSourceHidden: shouldDrop });
   if(!shouldDrop) return;
-  await transferCardToNextPlayer(draggedIndex);
+  const transferred = await transferCardToNextPlayer(draggedIndex);
+  if(!transferred && cardEl){
+    cardEl.classList.remove('pointer-dragging-source');
+  }
 }
 
 function startPointerCardDrag(cardEl, cardIndex, ev){
@@ -1307,17 +1311,17 @@ function getNextPlayerId(){
 }
 
 async function transferCardToNextPlayer(cardIndex){
-  if(isTransferringCard || !state.roomCode) return;
+  if(isTransferringCard || !state.roomCode) return false;
   const nextPlayerId = getNextPlayerId();
-  if(!nextPlayerId || nextPlayerId === state.userId) return;
+  if(!nextPlayerId || nextPlayerId === state.userId) return false;
 
   const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
     ? state.hands[state.userId].cards.slice()
     : [];
-  if(myHand.length !== 2) return;
+  if(myHand.length !== 2) return false;
 
   const movingCard = myHand[cardIndex];
-  if(!movingCard) return;
+  if(!movingCard) return false;
 
   isTransferringCard = true;
   const prevHands = state.hands;
@@ -1359,7 +1363,7 @@ async function transferCardToNextPlayer(cardIndex){
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: afterTransfer
     });
 
-    if(!drawCard) return;
+    if(!drawCard) return true;
 
     await wait(TRANSFER_TO_DRAW_DELAY_MS);
 
@@ -1367,6 +1371,8 @@ async function transferCardToNextPlayer(cardIndex){
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: [drawCard, ...afterTransfer],
       [`rooms/${state.roomCode}/deck`]: deck.slice(0, -1)
     });
+
+    return true;
   } catch (err) {
     state.hands = prevHands;
     renderHands();
