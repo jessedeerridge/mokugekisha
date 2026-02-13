@@ -243,6 +243,11 @@
     transform: scale(1.1);
     transform-origin: center;
   }
+  .card.draggable{cursor:grab;}
+  .card.dragging{opacity:.35;}
+  .player-tag.drop-target{
+    box-shadow:0 0 0 2px #111;
+  }
 
   /* ★ 追い出し確認ダイアログ */
   .dialog-backdrop{
@@ -480,6 +485,7 @@ const state = {
   isHost: false,
   hands: {},
   room: {},
+  turnPlayerId: null,
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
   deck: [],       // ★ 山札（残り）配列
   startAnimation: null
@@ -531,6 +537,10 @@ let latestPlayers = [];
 let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
+let lastTransferAnimationId = null;
+let runningTransferAnimationId = null;
+let draggingCardInfo = null;
+let transferSubmitting = false;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -653,9 +663,11 @@ function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   onValue(roomRef, snap => {
     state.room = snap.val() || {};
+    state.turnPlayerId = state.room.turnPlayerId || null;
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
     syncSeatUI();
+    renderHands();
   });
 }
 function subscribeHostState(){
@@ -711,17 +723,44 @@ function subscribeStartAnimation(){
     runStartAnimation(data);
   });
 }
+function subscribeTransferAnimation(){
+  const animRef = ref(db, `rooms/${state.roomCode}/transferAnimation`);
+  onValue(animRef, snap => {
+    const data = snap.val();
+    if(!data || !data.id || data.status !== 'run') return;
+    if(lastTransferAnimationId === data.id) return;
+    lastTransferAnimationId = data.id;
+    runTransferAnimation(data);
+  });
+}
 
 // ========= 手札描画（画像表示） =========
+function getNextPlayerId(fromPlayerId){
+  if(!fromPlayerId || latestPlayers.length < 2) return null;
+  const idx = latestPlayers.findIndex(p => p.id === fromPlayerId);
+  if(idx === -1) return null;
+  return latestPlayers[(idx + 1) % latestPlayers.length].id;
+}
+function isMyTransferTurn(){
+  return state.turnPlayerId === state.userId && !!getNextPlayerId(state.userId) && !runningTransferAnimationId && !transferSubmitting;
+}
+
 function renderMyHand(){
   myHandEl.innerHTML = '';
   const myId = state.userId;
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
+  const canDrag = isMyTransferTurn();
 
-  handData.cards.forEach(name => {
+  handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
     card.className = 'card';
+    if(canDrag){
+      card.classList.add('draggable');
+      card.draggable = true;
+      card.dataset.cardIndex = String(idx);
+      card.dataset.cardName = name;
+    }
 
     const img = document.createElement('img');
     img.alt = name;
@@ -736,6 +775,22 @@ function renderHands(){
   renderMyHand();
   if (latestPlayers.length) renderPlayerCircle(latestPlayers);
 }
+
+myHandEl.addEventListener('dragstart', (e) => {
+  const card = e.target.closest('.card.draggable');
+  if(!card || !isMyTransferTurn()) return;
+  draggingCardInfo = {
+    cardIndex: Number(card.dataset.cardIndex),
+    cardName: card.dataset.cardName,
+    element: card
+  };
+  card.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+});
+myHandEl.addEventListener('dragend', () => {
+  const dragging = myHandEl.querySelector('.card.dragging');
+  if(dragging) dragging.classList.remove('dragging');
+});
 
 // ========= 参加/入室 =========
 const urlParams = new URLSearchParams(window.location.search);
@@ -805,6 +860,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
   subscribeStartAnimation();
+  subscribeTransferAnimation();
 
   syncSeatUI();
 });
@@ -988,16 +1044,7 @@ function renderCenterDeck(){
 }
 
 function getDealTargetPoint(playerId){
-  if(playerId === state.userId){
-    const rect = myHandEl.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + 42 };
-  }
-  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
-  if(tag){
-    const rect = tag.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.bottom + 50 };
-  }
-  return null;
+  return getPlayerHandPoint(playerId);
 }
 
 async function animateShuffle3(){
@@ -1115,6 +1162,105 @@ function applyLocalDealPreview(playerId, cardName){
   renderHands();
 }
 
+function getPlayerHandPoint(playerId){
+  if(playerId === state.userId){
+    const rect = myHandEl.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + 42 };
+  }
+  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
+  if(!tag) return null;
+  const rect = tag.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.bottom + 50 };
+}
+
+async function animateTransferCard(fromPlayerId, toPlayerId, cardName, sourceEl){
+  const to = getPlayerHandPoint(toPlayerId);
+  if(!to) return;
+  let from = null;
+  if(sourceEl){
+    const rect = sourceEl.getBoundingClientRect();
+    from = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+  if(!from) from = getPlayerHandPoint(fromPlayerId);
+  if(!from) return;
+
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+  const img = document.createElement('img');
+  img.alt = cardName;
+  img.src = cardImg(cardName);
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  document.body.appendChild(fly);
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)' },
+    { transform: `translate(-50%, -50%) translate(${dx * 0.5}px, ${dy * 0.5 - 14}px) rotate(9deg) scale(1.03)` },
+    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(12deg) scale(0.98)` }
+  ], { duration: 420, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+  await anim.finished.catch(() => {});
+  fly.remove();
+}
+
+async function runTransferAnimation(animData, sourceEl){
+  if(!animData || !animData.id) return;
+  if(runningTransferAnimationId === animData.id) return;
+  runningTransferAnimationId = animData.id;
+
+  try {
+    const ready = await waitForAnimationLayout(animData.fromPlayerId);
+    if(!ready) return;
+
+    setDeckBadgeCount(Number(animData.deckCountBefore || state.deck.length));
+
+    const fromBefore = (state.hands[animData.fromPlayerId]?.cards || []).slice();
+    const removeIndex = Number(animData.fromCardIndex);
+    let removed = false;
+    const fromAfterGive = Number.isInteger(removeIndex)
+      ? fromBefore.filter((_, idxCard) => idxCard !== removeIndex)
+      : fromBefore.filter((name) => {
+        if(!removed && name === animData.cardName){
+          removed = true;
+          return false;
+        }
+        return true;
+      });
+    state.hands = {
+      ...state.hands,
+      [animData.fromPlayerId]: { cards: fromAfterGive }
+    };
+    renderHands();
+
+    await animateTransferCard(animData.fromPlayerId, animData.toPlayerId, animData.cardName, sourceEl);
+
+    const toCards = state.hands[animData.toPlayerId]?.cards || [];
+    state.hands = {
+      ...state.hands,
+      [animData.toPlayerId]: { cards: [...toCards, animData.cardName] }
+    };
+    renderHands();
+
+    await wait(70);
+    const drawFly = await animateDealCardToPlayer(animData.fromPlayerId);
+    const fromCards = state.hands[animData.fromPlayerId]?.cards || [];
+    state.hands = {
+      ...state.hands,
+      [animData.fromPlayerId]: { cards: [animData.drawnCard, ...fromCards] }
+    };
+    renderHands();
+    setDeckBadgeCount(Math.max(Number(animData.deckCountBefore || state.deck.length) - 1, 0));
+    await wait(80);
+    if(drawFly) drawFly.remove();
+  } finally {
+    if(runningTransferAnimationId === animData.id) runningTransferAnimationId = null;
+  }
+}
+
 async function runStartAnimation(animData){
   if(!animData || !animData.id) return;
   if(runningStartAnimationId === animData.id) return;
@@ -1184,6 +1330,68 @@ function renderPlayerCircle(players){
       kickMessage.textContent = `「${p.name}」を追い出して、この席に着席しますか？`;
       kickDialog.classList.remove('hidden');
     };
+
+    const nextPlayerId = getNextPlayerId(state.userId);
+    if(isMyTransferTurn() && p.id === nextPlayerId){
+      tag.classList.add('drop-target');
+      tag.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      });
+      tag.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        if(!draggingCardInfo || transferSubmitting || !state.roomCode || !isMyTransferTurn()) return;
+
+        const myCards = (state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards))
+          ? state.hands[state.userId].cards.slice()
+          : [];
+        const cardName = myCards[draggingCardInfo.cardIndex];
+        const drawnCard = state.deck.length ? state.deck[state.deck.length - 1] : null;
+        if(!cardName || !drawnCard) return;
+
+        transferSubmitting = true;
+        try {
+          const animationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const animData = {
+            id: animationId,
+            status: 'run',
+            fromPlayerId: state.userId,
+            toPlayerId: nextPlayerId,
+            cardName,
+            fromCardIndex: draggingCardInfo.cardIndex,
+            drawnCard,
+            deckCountBefore: state.deck.length,
+            createdAt: Date.now()
+          };
+
+          const sourceEl = draggingCardInfo.element;
+          const patch = {};
+          patch[`rooms/${state.roomCode}/transferAnimation`] = animData;
+          lastTransferAnimationId = animationId;
+          const toCardsBefore = (state.hands[nextPlayerId]?.cards || []).slice();
+          await update(ref(db), patch);
+          await runTransferAnimation(animData, sourceEl);
+
+          const fromCards = myCards.filter((_, idxCard) => idxCard !== draggingCardInfo.cardIndex);
+          fromCards.unshift(drawnCard);
+          const toCards = toCardsBefore.slice();
+          toCards.push(cardName);
+          const nextDeck = state.deck.slice(0, -1);
+
+          const finalPatch = {};
+          finalPatch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = fromCards;
+          finalPatch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = toCards;
+          finalPatch[`rooms/${state.roomCode}/deck`] = nextDeck;
+          finalPatch[`rooms/${state.roomCode}/turnPlayerId`] = nextPlayerId;
+          finalPatch[`rooms/${state.roomCode}/transferAnimation`] = null;
+          await update(ref(db), finalPatch);
+
+          draggingCardInfo = null;
+        } finally {
+          transferSubmitting = false;
+        }
+      });
+    }
 
     // 他プレイヤーの手札枚数だけ、裏面カード（54x81）を扇状表示
     const handData = state.hands[p.id];
@@ -1290,7 +1498,9 @@ async function dealInitialHands(){
   resetPatch[`${base}/hands`] = {};
   resetPatch[`${base}/deck`] = enabledCards.slice();
   resetPatch[`${base}/startPlayerId`] = null;
+  resetPatch[`${base}/turnPlayerId`] = null;
   resetPatch[`${base}/startAnimation`] = null;
+  resetPatch[`${base}/transferAnimation`] = null;
   await update(ref(db), resetPatch);
   state.hands = {};
   renderHands();
@@ -1329,6 +1539,7 @@ async function dealInitialHands(){
   patch[`rooms/${state.roomCode}/hands`] = hands;
   patch[`rooms/${state.roomCode}/deck`]  = deck;
   patch[`rooms/${state.roomCode}/startPlayerId`] = startPlayerId;
+  patch[`rooms/${state.roomCode}/turnPlayerId`] = startPlayerId;
   await update(ref(db), patch);
 }
 
@@ -1364,7 +1575,9 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/hands`)),
     remove(ref(db, `${base}/deck`)),        // ★ 山札も消す
     remove(ref(db, `${base}/startPlayerId`)),
+    remove(ref(db, `${base}/turnPlayerId`)),
     remove(ref(db, `${base}/startAnimation`)),
+    remove(ref(db, `${base}/transferAnimation`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
