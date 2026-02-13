@@ -84,8 +84,24 @@
     z-index:10;
     display:flex;align-items:center;justify-content:center;
   }
-  /* デッキと他プレイヤーのカードサイズ：54x81 */
-  .deck-card{
+  :root{
+    --offsetX:4px;
+    --offsetY:4px;
+    --outX:66px;
+    --tiltBase:0deg;
+    --tiltMore:10deg;
+    --durOut:220ms;
+    --durIn:220ms;
+    --pause:20ms;
+  }
+  .shuffle-deck{
+    position:relative;
+    width:54px;
+    height:81px;
+  }
+  .shuffle-card{
+    position:absolute;
+    inset:0;
     width:54px;height:81px;border-radius:10px;
     border:3px solid #fff;
     box-shadow:
@@ -93,15 +109,50 @@
       0 4px 12px rgba(0,0,0,.15);
     background:#fff;
     overflow:hidden;
-    position:relative;
+    position:absolute;
     user-select:none;
   }
-  .deck-card img{
+  .shuffle-card img{
     width:100%;height:100%;
     object-fit:cover;
     display:block;
     transform:scale(1.05);
     transform-origin:center;
+  }
+  .shuffle-card.back{
+    transform: translate(var(--offsetX), var(--offsetY)) rotate(0deg);
+    z-index:1;
+  }
+  .shuffle-card.front{
+    transform: translate(0,0) rotate(0deg);
+    z-index:2;
+  }
+  .shuffle-card.movingOut{
+    transition: transform var(--durOut) ease-in-out;
+    transform: translate(var(--outX), 0) rotate(calc(var(--tiltBase) + var(--tiltMore)));
+  }
+  .shuffle-card.movingIn{
+    transition: transform var(--durIn) ease-in-out;
+    transform: translate(var(--offsetX), var(--offsetY)) rotate(var(--tiltBase));
+  }
+
+  .deal-fly-card{
+    position:fixed;
+    width:54px;
+    height:81px;
+    border-radius:10px;
+    border:3px solid #fff;
+    box-shadow:0 0 0 1px #000, 0 12px 24px rgba(0,0,0,.28);
+    overflow:hidden;
+    z-index:500;
+    pointer-events:none;
+  }
+  .deal-fly-card img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    transform:scale(1.05);
   }
   .count-badge{
     position:absolute;right:4px;top:4px;
@@ -346,7 +397,7 @@
     <button id="btnStartPopClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
   </div>
   <div class="start-pop-main">
-    「スタート」で、濃いカードだけでデッキを作り全員に1枚配布。<br>
+    「スタート」で場をリセット後にシャッフルし、ランダムな開始プレイヤー1人に2枚配布。<br>
     山札はプレイヤーサークル中央に表示（右上に枚数タグ）。<br>
     「リセット」で人数選択へ戻します。
   </div>
@@ -407,7 +458,8 @@ const state = {
   hands: {},
   room: {},
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
-  deck: []        // ★ 山札（残り）配列
+  deck: [],       // ★ 山札（残り）配列
+  startAnimation: null
 };
 
 // DOM
@@ -453,6 +505,9 @@ let pendingSeatIndexToSteal = null;
 let pendingSeatPlayerIdToSteal = null;
 let isRenderingSeatTabs = false;
 let latestPlayers = [];
+let startRunning = false;
+let lastStartAnimationId = null;
+let runningStartAnimationId = null;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -472,6 +527,15 @@ function shuffle(arr){
 function cardImg(name){
   // 画像名.jpg ルール
   return `${name}.jpg`;
+}
+function cssMs(name){
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if(v.endsWith('ms')) return parseFloat(v);
+  if(v.endsWith('s')) return parseFloat(v) * 1000;
+  return parseFloat(v) || 0;
+}
+function wait(ms){
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 function defaultDeckConfig(){
   const o = {};
@@ -614,6 +678,16 @@ function subscribeDeck(){
     if (latestPlayers.length) renderPlayerCircle(latestPlayers);
   });
 }
+function subscribeStartAnimation(){
+  const animRef = ref(db, `rooms/${state.roomCode}/startAnimation`);
+  onValue(animRef, snap => {
+    const data = snap.val();
+    if(!data || !data.id || data.status !== 'run') return;
+    if(lastStartAnimationId === data.id) return;
+    lastStartAnimationId = data.id;
+    runStartAnimation(data);
+  });
+}
 
 // ========= 手札描画（画像表示） =========
 function renderMyHand(){
@@ -707,6 +781,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeHands();
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
+  subscribeStartAnimation();
 
   syncSeatUI();
 });
@@ -845,26 +920,204 @@ function subscribePlayers(){
 }
 
 function renderCenterDeck(){
-  // 中央に山札（裏面 + 枚数タグ）
   const wrap = document.createElement('div');
   wrap.className = 'deck-wrap';
+  wrap.dataset.role = 'deck';
 
-  const deckCard = document.createElement('div');
-  deckCard.className = 'deck-card';
+  const shuffleDeck = document.createElement('div');
+  shuffleDeck.className = 'shuffle-deck';
 
-  const img = document.createElement('img');
-  img.alt = '山札';
-  img.src = BACK_IMG;
-  img.loading = 'lazy';
-  deckCard.appendChild(img);
+  const backCard = document.createElement('div');
+  backCard.className = 'shuffle-card back';
+  backCard.dataset.role = 'shuffle-back';
+
+  const backImg = document.createElement('img');
+  backImg.alt = '山札';
+  backImg.src = BACK_IMG;
+  backImg.loading = 'lazy';
+  backCard.appendChild(backImg);
+
+  const frontCard = document.createElement('div');
+  frontCard.className = 'shuffle-card front';
+  frontCard.dataset.role = 'shuffle-front';
+
+  const frontImg = document.createElement('img');
+  frontImg.alt = '山札';
+  frontImg.src = BACK_IMG;
+  frontImg.loading = 'lazy';
+  frontCard.appendChild(frontImg);
+
+  shuffleDeck.appendChild(backCard);
+  shuffleDeck.appendChild(frontCard);
 
   const badge = document.createElement('div');
   badge.className = 'count-badge';
+  badge.dataset.role = 'deck-count';
   badge.textContent = String((state.deck && state.deck.length) ? state.deck.length : 0);
-  deckCard.appendChild(badge);
+  frontCard.appendChild(badge);
 
-  wrap.appendChild(deckCard);
+  wrap.appendChild(shuffleDeck);
   playerCircle.appendChild(wrap);
+}
+
+function getDealTargetPoint(playerId){
+  if(playerId === state.userId){
+    const rect = myHandEl.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + 42 };
+  }
+  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
+  if(tag){
+    const rect = tag.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.bottom + 50 };
+  }
+  return null;
+}
+
+async function animateShuffle3(){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+
+  let front = deckWrap.querySelector('[data-role="shuffle-front"]');
+  let back = deckWrap.querySelector('[data-role="shuffle-back"]');
+  if(!front || !back) return;
+
+  const DUR_OUT = cssMs('--durOut');
+  const DUR_IN = cssMs('--durIn');
+  const PAUSE = cssMs('--pause');
+
+  front.classList.remove('movingOut', 'movingIn');
+  back.classList.remove('movingOut', 'movingIn');
+
+  for(let i = 0; i < 3; i++){
+    front.classList.remove('movingIn');
+    void front.offsetWidth;
+    front.classList.add('movingOut');
+    await wait(DUR_OUT);
+
+    front.classList.remove('movingOut');
+
+    front.classList.remove('front');
+    front.classList.add('back');
+    front.dataset.role = 'shuffle-back';
+
+    back.classList.remove('back');
+    back.classList.add('front');
+    back.dataset.role = 'shuffle-front';
+
+    const tmp = front;
+    front = back;
+    back = tmp;
+
+    back.classList.remove('movingOut');
+    void back.offsetWidth;
+    back.classList.add('movingIn');
+    await wait(DUR_IN);
+
+    back.classList.remove('movingIn');
+    await wait(PAUSE);
+  }
+}
+
+function setDeckBadgeCount(count){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+  const badge = deckWrap.querySelector('[data-role="deck-count"]');
+  if(badge) badge.textContent = String(Math.max(count, 0));
+}
+
+function getDeckCenterPoint(){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return null;
+  const rect = deckWrap.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+async function animateDealCardToPlayer(playerId){
+  const from = getDeckCenterPoint();
+  const to = getDealTargetPoint(playerId);
+  if(!from || !to) return;
+
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+  const img = document.createElement('img');
+  img.alt = '配布カード';
+  img.src = BACK_IMG;
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  fly.style.opacity = '1';
+  document.body.appendChild(fly);
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx * 0.55}px, ${dy * 0.55 - 18}px) rotate(8deg) scale(1.03)`, opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(12deg) scale(0.98)`, opacity: 0.98 }
+  ], {
+    duration: 420,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
+  return fly;
+}
+
+async function waitForAnimationLayout(startPlayerId){
+  for(let i = 0; i < 20; i++){
+    const from = getDeckCenterPoint();
+    const to = getDealTargetPoint(startPlayerId);
+    if(from && to) return true;
+    await wait(100);
+  }
+  return false;
+}
+
+function applyLocalDealPreview(playerId, cardName){
+  if(!playerId) return;
+  const nextHands = { ...state.hands };
+  const base = nextHands[playerId] && Array.isArray(nextHands[playerId].cards)
+    ? nextHands[playerId].cards.slice()
+    : [];
+  if(cardName) base.push(cardName);
+  nextHands[playerId] = { cards: base };
+  state.hands = nextHands;
+  renderHands();
+}
+
+async function runStartAnimation(animData){
+  if(!animData || !animData.id) return;
+  if(runningStartAnimationId === animData.id) return;
+  runningStartAnimationId = animData.id;
+
+  const deals = Number(animData.deals || 2);
+  const initialDeckCount = Number(animData.initialDeckCount || 0);
+  const startPlayerId = animData.startPlayerId;
+  const drawnCards = Array.isArray(animData.drawnCards) ? animData.drawnCards : [];
+
+  try {
+    const ready = await waitForAnimationLayout(startPlayerId);
+    if(!ready) return;
+
+    setDeckBadgeCount(initialDeckCount);
+    await animateShuffle3();
+
+    for(let i = 0; i < deals; i++){
+      const dealtName = drawnCards[i] || null;
+      const remaining = Math.max(initialDeckCount - (i + 1), 0);
+      const fly = await animateDealCardToPlayer(startPlayerId);
+      applyLocalDealPreview(startPlayerId, dealtName);
+      await wait(40);
+      setDeckBadgeCount(remaining);
+      await wait(70);
+      if(fly) fly.remove();
+    }
+  } finally {
+    if(runningStartAnimationId === animData.id) runningStartAnimationId = null;
+  }
 }
 
 function renderPlayerCircle(players){
@@ -889,6 +1142,7 @@ function renderPlayerCircle(players){
 
     const tag = document.createElement('div');
     tag.className = 'player-tag' + (p.id === state.userId ? ' me' : '');
+    tag.dataset.playerId = p.id;
     tag.textContent = p.name;
     tag.style.left = `${x}%`;
     tag.style.top = `${y}%`;
@@ -979,7 +1233,7 @@ btnKickYes.addEventListener('click', async (e) => {
   seatPop.classList.add('hidden');
 });
 
-// ========= ゲーム開始（濃いカードのみでデッキ→全員に1枚配布→残りを山札に保存） =========
+// ========= ゲーム開始（シャッフル→開始プレイヤーを1人ランダム→その人に2枚配布） =========
 async function dealInitialHands(){
   if (!state.roomCode) return;
 
@@ -994,27 +1248,56 @@ async function dealInitialHands(){
     return;
   }
 
-  // 配布対象（着席者）
   const players = Object.values(tables)
     .filter(t => t && t.playerId)
     .map(t => t.playerId);
 
   if(players.length === 0) return;
 
-  // デッキ作成→シャッフル（DBに残りを保存する）
+  const base = `rooms/${state.roomCode}`;
+  const resetPatch = {};
+  resetPatch[`${base}/hands`] = {};
+  resetPatch[`${base}/deck`] = enabledCards.slice();
+  resetPatch[`${base}/startPlayerId`] = null;
+  resetPatch[`${base}/startAnimation`] = null;
+  await update(ref(db), resetPatch);
+  state.hands = {};
+  renderHands();
+  await wait(80);
+
   let deck = shuffle(enabledCards);
+  const startPlayerId = players[Math.floor(Math.random() * players.length)];
+  const drawnCards = [];
+  for (let i = 0; i < 2; i++){
+    if(deck.length === 0) deck = shuffle(enabledCards);
+    drawnCards.push(deck.pop());
+  }
+  const startAnimationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const animPatch = {};
+  animPatch[`rooms/${state.roomCode}/startAnimation`] = {
+    id: startAnimationId,
+    status: 'run',
+    startPlayerId,
+    deals: 2,
+    drawnCards,
+    initialDeckCount: enabledCards.length,
+    createdAt: Date.now()
+  };
+  lastStartAnimationId = startAnimationId;
+  await update(ref(db), animPatch);
+  await runStartAnimation(animPatch[`rooms/${state.roomCode}/startAnimation`]);
 
   const hands = {};
-  for (const pid of players){
-    if(deck.length === 0) deck = shuffle(enabledCards); // 足りなければ再シャッフルで補充
-    const drawn = deck.pop();
-    hands[pid] = { cards: [drawn] };
-  }
+  players.forEach(pid => {
+    hands[pid] = { cards: [] };
+  });
+  hands[startPlayerId].cards = drawnCards.slice();
 
-  // ★ hands と deck(残り) を保存
   const patch = {};
   patch[`rooms/${state.roomCode}/hands`] = hands;
-  patch[`rooms/${state.roomCode}/deck`]  = deck; // 残り
+  patch[`rooms/${state.roomCode}/deck`]  = deck;
+  patch[`rooms/${state.roomCode}/startPlayerId`] = startPlayerId;
   await update(ref(db), patch);
 }
 
@@ -1028,9 +1311,16 @@ btnStartPopClose.addEventListener('click', () => {
 });
 
 btnGameStart.addEventListener('click', async () => {
-  if (!state.isHost) return;
-  await dealInitialHands();
-  startPop.classList.add('hidden');
+  if (!state.isHost || startRunning) return;
+  startRunning = true;
+  btnGameStart.disabled = true;
+  try {
+    await dealInitialHands();
+    startPop.classList.add('hidden');
+  } finally {
+    btnGameStart.disabled = false;
+    startRunning = false;
+  }
 });
 
 btnResetRoom.addEventListener('click', async () => {
@@ -1042,6 +1332,8 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/tables`)),
     remove(ref(db, `${base}/hands`)),
     remove(ref(db, `${base}/deck`)),        // ★ 山札も消す
+    remove(ref(db, `${base}/startPlayerId`)),
+    remove(ref(db, `${base}/startAnimation`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
