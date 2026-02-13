@@ -74,6 +74,7 @@
     z-index:20;
   }
   .player-tag.me{ background:#111;color:#fff;border-color:#111; }
+  .player-tag.turn{ outline:3px solid #f59e0b; }
 
   /* =========================
      ★ 山札（プレイヤーサークル中心）
@@ -168,6 +169,14 @@
     display:block;
     transform: scale(1.1);
     transform-origin: center;
+  }
+
+  .deal-fly-card{
+    position:fixed;
+    margin:0;
+    pointer-events:none;
+    z-index:999;
+    transition:transform 380ms ease, opacity 380ms ease;
   }
 
   /* ★ 追い出し確認ダイアログ */
@@ -346,7 +355,8 @@
     <button id="btnStartPopClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
   </div>
   <div class="start-pop-main">
-    「スタート」で、濃いカードだけでデッキを作り全員に1枚配布。<br>
+    「スタート」で、濃いカードだけでデッキを作りシャッフル。<br>
+    ランダムでスタートプレイヤーを1人決定し、その人にだけ2枚配布。<br>
     山札はプレイヤーサークル中央に表示（右上に枚数タグ）。<br>
     「リセット」で人数選択へ戻します。
   </div>
@@ -407,7 +417,8 @@ const state = {
   hands: {},
   room: {},
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
-  deck: []        // ★ 山札（残り）配列
+  deck: [],       // ★ 山札（残り）配列
+  turnPlayerId: null
 };
 
 // DOM
@@ -584,10 +595,72 @@ function subscribeHostState(){
 }
 function subscribeHands(){
   const handsRef = ref(db, `rooms/${state.roomCode}/hands`);
-  onValue(handsRef, snap => {
-    state.hands = snap.val() || {};
+  onValue(handsRef, async snap => {
+    const prevCount = state.hands[state.userId]?.cards?.length || 0;
+    const nextHands = snap.val() || {};
+    const nextCount = nextHands[state.userId]?.cards?.length || 0;
+
+    if (nextCount > prevCount) {
+      await animateDealingToMyHand(nextCount - prevCount, nextCount);
+    }
+
+    state.hands = nextHands;
     renderHands();
   });
+}
+function subscribeTurn(){
+  const turnRef = ref(db, `rooms/${state.roomCode}/turnPlayerId`);
+  onValue(turnRef, snap => {
+    state.turnPlayerId = snap.val() || null;
+    if (latestPlayers.length) renderPlayerCircle(latestPlayers);
+  });
+}
+
+async function animateDealingToMyHand(drawCount, totalCountAfterDraw){
+  const deckEl = document.getElementById('centerDeckCard');
+  if (!deckEl || drawCount <= 0) return;
+
+  const source = deckEl.getBoundingClientRect();
+  const handRect = myHandEl.getBoundingClientRect();
+  if (!source.width || !handRect.width) return;
+
+  const cardW = 60;
+  const gap = 8;
+  const totalWidth = totalCountAfterDraw * cardW + Math.max(0, totalCountAfterDraw - 1) * gap;
+  const startX = handRect.left + (handRect.width - totalWidth) / 2;
+  const cardY = handRect.top;
+
+  const tasks = [];
+  for(let i = 0; i < drawCount; i++){
+    const cardIndex = totalCountAfterDraw - drawCount + i;
+    const targetX = startX + cardIndex * (cardW + gap);
+    const fly = document.createElement('div');
+    fly.className = 'card deal-fly-card';
+    fly.style.left = `${source.left}px`;
+    fly.style.top = `${source.top}px`;
+
+    const img = document.createElement('img');
+    img.alt = '配布アニメ';
+    img.src = BACK_IMG;
+    fly.appendChild(img);
+    document.body.appendChild(fly);
+
+    const dx = targetX - source.left;
+    const dy = cardY - source.top;
+
+    const p = new Promise(resolve => {
+      requestAnimationFrame(() => {
+        fly.style.transform = `translate(${dx}px, ${dy}px)`;
+      });
+      setTimeout(() => {
+        fly.remove();
+        resolve();
+      }, 420 + i * 80);
+    });
+    tasks.push(p);
+    await new Promise(r => setTimeout(r, 90));
+  }
+  await Promise.all(tasks);
 }
 function subscribeDeckConfig(){
   const cfgRef = ref(db, `rooms/${state.roomCode}/deckConfig`);
@@ -707,6 +780,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeHands();
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
+  subscribeTurn();
 
   syncSeatUI();
 });
@@ -851,6 +925,7 @@ function renderCenterDeck(){
 
   const deckCard = document.createElement('div');
   deckCard.className = 'deck-card';
+  deckCard.id = 'centerDeckCard';
 
   const img = document.createElement('img');
   img.alt = '山札';
@@ -889,6 +964,7 @@ function renderPlayerCircle(players){
 
     const tag = document.createElement('div');
     tag.className = 'player-tag' + (p.id === state.userId ? ' me' : '');
+    if (p.id === state.turnPlayerId) tag.classList.add('turn');
     tag.textContent = p.name;
     tag.style.left = `${x}%`;
     tag.style.top = `${y}%`;
@@ -979,7 +1055,7 @@ btnKickYes.addEventListener('click', async (e) => {
   seatPop.classList.add('hidden');
 });
 
-// ========= ゲーム開始（濃いカードのみでデッキ→全員に1枚配布→残りを山札に保存） =========
+// ========= ゲーム開始（濃いカードのみでデッキ→ランダム先手に2枚配布→残りを山札に保存） =========
 async function dealInitialHands(){
   if (!state.roomCode) return;
 
@@ -1004,17 +1080,23 @@ async function dealInitialHands(){
   // デッキ作成→シャッフル（DBに残りを保存する）
   let deck = shuffle(enabledCards);
 
-  const hands = {};
-  for (const pid of players){
-    if(deck.length === 0) deck = shuffle(enabledCards); // 足りなければ再シャッフルで補充
-    const drawn = deck.pop();
-    hands[pid] = { cards: [drawn] };
-  }
+  const starterIndex = Math.floor(Math.random() * players.length);
+  const starterId = players[starterIndex];
 
-  // ★ hands と deck(残り) を保存
+  const hands = {};
+  const starterCards = [];
+  for (let i = 0; i < 2; i++) {
+    if(deck.length === 0) deck = shuffle(enabledCards); // 足りなければ再シャッフルで補充
+    starterCards.push(deck.pop());
+  }
+  hands[starterId] = { cards: starterCards };
+
+  // ★ hands/deck と開始プレイヤー情報を保存
   const patch = {};
   patch[`rooms/${state.roomCode}/hands`] = hands;
   patch[`rooms/${state.roomCode}/deck`]  = deck; // 残り
+  patch[`rooms/${state.roomCode}/turnPlayerId`] = starterId;
+  patch[`rooms/${state.roomCode}/startPlayerId`] = starterId;
   await update(ref(db), patch);
 }
 
@@ -1042,6 +1124,8 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/tables`)),
     remove(ref(db, `${base}/hands`)),
     remove(ref(db, `${base}/deck`)),        // ★ 山札も消す
+    remove(ref(db, `${base}/turnPlayerId`)),
+    remove(ref(db, `${base}/startPlayerId`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
