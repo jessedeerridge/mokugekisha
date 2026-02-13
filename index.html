@@ -746,7 +746,8 @@ function subscribeTransferAnimation(){
     lastTransferAnimationId = data.id;
 
     (async () => {
-      if(data.fromPlayerId && data.toPlayerId){
+      const isDraggingPlayer = data.fromPlayerId && state.userId && data.fromPlayerId === state.userId;
+      if(data.fromPlayerId && data.toPlayerId && !isDraggingPlayer){
         const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
         if(transferFly) transferFly.remove();
       }
