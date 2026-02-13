@@ -556,6 +556,7 @@ let runningStartAnimationId = null;
 let lastTransferAnimationId = null;
 let isTransferringCard = false;
 let activePointerDrag = null;
+const TRANSFER_TO_DRAW_DELAY_MS = 900;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -751,6 +752,7 @@ function subscribeTransferAnimation(){
       }
 
       if(data.hasDrawCard && data.toPlayerId){
+        await wait(TRANSFER_TO_DRAW_DELAY_MS);
         const drawFly = await animateDealCardToPlayer(data.toPlayerId);
         if(drawFly) drawFly.remove();
       }
@@ -1350,7 +1352,7 @@ async function transferCardToNextPlayer(cardIndex){
 
     if(!drawCard) return;
 
-    await wait(320);
+    await wait(TRANSFER_TO_DRAW_DELAY_MS);
 
     await update(ref(db), {
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: [drawCard, ...afterTransfer],
