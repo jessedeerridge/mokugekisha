@@ -88,8 +88,8 @@
     --offsetX:4px;
     --offsetY:4px;
     --outX:66px;
-    --tiltBase:5deg;
-    --tiltMore:5deg;
+    --tiltBase:0deg;
+    --tiltMore:10deg;
     --durOut:220ms;
     --durIn:220ms;
     --pause:20ms;
@@ -120,11 +120,11 @@
     transform-origin:center;
   }
   .shuffle-card.back{
-    transform: translate(var(--offsetX), var(--offsetY)) rotate(var(--tiltBase));
+    transform: translate(var(--offsetX), var(--offsetY)) rotate(0deg);
     z-index:1;
   }
   .shuffle-card.front{
-    transform: translate(0,0) rotate(var(--tiltBase));
+    transform: translate(0,0) rotate(0deg);
     z-index:2;
   }
   .shuffle-card.movingOut{
@@ -397,7 +397,7 @@
     <button id="btnStartPopClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
   </div>
   <div class="start-pop-main">
-    「スタート」でシャッフルし、ランダムな開始プレイヤー1人に2枚配布。<br>
+    「スタート」で場をリセット後にシャッフルし、ランダムな開始プレイヤー1人に2枚配布。<br>
     山札はプレイヤーサークル中央に表示（右上に枚数タグ）。<br>
     「リセット」で人数選択へ戻します。
   </div>
@@ -1033,10 +1033,9 @@ async function animateDealCardToPlayer(playerId, remainingCount){
     fly.style.opacity = '0.92';
   });
 
+  await wait(380);
   const badge = deckWrap.querySelector('[data-role="deck-count"]');
   if(badge) badge.textContent = String(Math.max(remainingCount, 0));
-
-  await wait(380);
   fly.remove();
 }
 
@@ -1174,6 +1173,14 @@ async function dealInitialHands(){
 
   if(players.length === 0) return;
 
+  const base = `rooms/${state.roomCode}`;
+  const resetPatch = {};
+  resetPatch[`${base}/hands`] = {};
+  resetPatch[`${base}/deck`] = enabledCards.slice();
+  resetPatch[`${base}/startPlayerId`] = null;
+  await update(ref(db), resetPatch);
+  await wait(80);
+
   await animateShuffle3();
 
   let deck = shuffle(enabledCards);
@@ -1211,10 +1218,13 @@ btnGameStart.addEventListener('click', async () => {
   if (!state.isHost || startRunning) return;
   startRunning = true;
   btnGameStart.disabled = true;
-  await dealInitialHands();
-  btnGameStart.disabled = false;
-  startRunning = false;
-  startPop.classList.add('hidden');
+  try {
+    await dealInitialHands();
+    startPop.classList.add('hidden');
+  } finally {
+    btnGameStart.disabled = false;
+    startRunning = false;
+  }
 });
 
 btnResetRoom.addEventListener('click', async () => {
