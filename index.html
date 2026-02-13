@@ -248,7 +248,7 @@
     filter:none;
   }
   .card.pointer-dragging-source{
-    opacity:1;
+    visibility:hidden;
   }
   .card img{
     width:100%;
@@ -553,6 +553,7 @@ let latestPlayers = [];
 let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
+let lastTransferAnimationId = null;
 let isTransferringCard = false;
 let activePointerDrag = null;
 
@@ -735,6 +736,24 @@ function subscribeStartAnimation(){
     runStartAnimation(data);
   });
 }
+function subscribeTransferAnimation(){
+  const transferRef = ref(db, `rooms/${state.roomCode}/transferAnimation`);
+  onValue(transferRef, snap => {
+    const data = snap.val();
+    if(!data || !data.id) return;
+    if(lastTransferAnimationId === data.id) return;
+    lastTransferAnimationId = data.id;
+
+    if(data.actorId === state.userId) return;
+    if(data.toPlayerId !== state.userId && !data.showToOthers) return;
+    if(!data.hasDrawCard) return;
+
+    animateDealCardToPlayer(data.toPlayerId).then((fly) => {
+      if(fly) fly.remove();
+    });
+  });
+}
+
 
 // ========= 手札描画（画像表示） =========
 function cleanupPointerDragState(){
@@ -952,6 +971,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
   subscribeStartAnimation();
+  subscribeTransferAnimation();
 
   syncSeatUI();
 });
@@ -1271,16 +1291,20 @@ async function transferCardToNextPlayer(cardIndex){
     const drawCard = deck.length ? deck[deck.length - 1] : null;
     const deckFinal = drawCard ? deck.slice(0, -1) : deck;
     const nextFinal = drawCard ? [drawCard, ...afterTransfer] : afterTransfer;
-
-    if(drawCard){
-      const fly = await animateDealCardToPlayer(nextPlayerId);
-      if(fly) fly.remove();
-    }
+    const transferAnimId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const patch = {};
     patch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
     patch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
     patch[`rooms/${state.roomCode}/deck`] = deckFinal;
+    patch[`rooms/${state.roomCode}/transferAnimation`] = {
+      id: transferAnimId,
+      actorId: state.userId,
+      toPlayerId: nextPlayerId,
+      hasDrawCard: !!drawCard,
+      showToOthers: true,
+      createdAt: Date.now()
+    };
     await update(ref(db), patch);
   } finally {
     isTransferringCard = false;
@@ -1581,6 +1605,7 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/deck`)),        // ★ 山札も消す
     remove(ref(db, `${base}/startPlayerId`)),
     remove(ref(db, `${base}/startAnimation`)),
+    remove(ref(db, `${base}/transferAnimation`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
