@@ -1287,25 +1287,35 @@ async function transferCardToNextPlayer(cardIndex){
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const afterTransfer = [...nextHand, movingCard];
 
+    // 1) まず受け取りカードだけ反映（ここで一度表示させる）
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
+      [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: afterTransfer
+    });
+
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
-    const deckFinal = drawCard ? deck.slice(0, -1) : deck;
-    const nextFinal = drawCard ? [drawCard, ...afterTransfer] : afterTransfer;
-    const transferAnimId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if(!drawCard) return;
 
-    const patch = {};
-    patch[`rooms/${state.roomCode}/hands/${state.userId}/cards`] = myFinal;
-    patch[`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`] = nextFinal;
-    patch[`rooms/${state.roomCode}/deck`] = deckFinal;
-    patch[`rooms/${state.roomCode}/transferAnimation`] = {
-      id: transferAnimId,
-      actorId: state.userId,
-      toPlayerId: nextPlayerId,
-      hasDrawCard: !!drawCard,
-      showToOthers: true,
-      createdAt: Date.now()
-    };
-    await update(ref(db), patch);
+    const transferAnimId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/transferAnimation`]: {
+        id: transferAnimId,
+        actorId: state.userId,
+        toPlayerId: nextPlayerId,
+        hasDrawCard: true,
+        showToOthers: true,
+        createdAt: Date.now()
+      }
+    });
+
+    // 2) ワンテンポ待ってから山札ドローを反映
+    await wait(320);
+
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: [drawCard, ...afterTransfer],
+      [`rooms/${state.roomCode}/deck`]: deck.slice(0, -1)
+    });
   } finally {
     isTransferringCard = false;
     cleanupPointerDragState();
