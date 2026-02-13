@@ -74,14 +74,13 @@
     z-index:20;
   }
   .player-tag.me{ background:#111;color:#fff;border-color:#111; }
-  .player-tag.next-turn-target{
-    outline:2px dashed #2563eb;
-    outline-offset:3px;
-  }
-  .player-tag.next-turn-target.drop-ready{
-    background:#2563eb;
-    color:#fff;
+  .player-tag .mini-hand.next-turn-target::before{
     border-color:#2563eb;
+    border-style:solid;
+    border-width:3px;
+  }
+  .player-tag .mini-hand.next-turn-target.drop-ready::before{
+    background:rgba(37,99,235,.14);
   }
 
   /* =========================
@@ -202,7 +201,11 @@
     height:var(--zone-circle-size);
     pointer-events:none;
   }
+  .player-tag .mini-hand.next-turn-target{
+    pointer-events:auto;
+  }
   .player-tag .mini-card{
+    pointer-events:none;
     position:absolute;left:50%;top:8px;
     width:54px;height:81px;
     border-radius:10px;
@@ -238,6 +241,14 @@
     overflow:hidden;
     display:flex;align-items:center;justify-content:center;
     user-select:none;
+  }
+  .card.dragging-source{
+    visibility:hidden;
+  }
+  .card.drag-preview{
+    opacity:1 !important;
+    visibility:visible !important;
+    filter:none !important;
   }
   .card img{
     width:100%;
@@ -536,6 +547,7 @@ let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
 let isTransferringCard = false;
+let activeDragSourceCard = null;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -718,6 +730,36 @@ function subscribeStartAnimation(){
 }
 
 // ========= 手札描画（画像表示） =========
+function createDragImage(cardEl){
+  const ghost = cardEl.cloneNode(true);
+  ghost.classList.remove('dragging-source');
+  ghost.classList.add('drag-preview');
+  ghost.style.position = 'fixed';
+  ghost.style.left = '0';
+  ghost.style.top = '0';
+  ghost.style.transform = 'translate(-200vw, -200vh)';
+  ghost.style.margin = '0';
+  ghost.style.opacity = '1';
+  ghost.style.visibility = 'visible';
+  ghost.style.pointerEvents = 'none';
+
+  const ghostImg = ghost.querySelector('img');
+  if(ghostImg){
+    ghostImg.draggable = false;
+    ghostImg.loading = 'eager';
+    ghostImg.decoding = 'sync';
+  }
+
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function clearActiveDragSource(){
+  if(!activeDragSourceCard) return;
+  activeDragSourceCard.classList.remove('dragging-source');
+  activeDragSourceCard = null;
+}
+
 function renderMyHand(){
   myHandEl.innerHTML = '';
   const myId = state.userId;
@@ -743,6 +785,22 @@ function renderMyHand(){
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', String(idx));
         e.dataTransfer.effectAllowed = 'move';
+
+        const dragImage = createDragImage(card);
+        e.dataTransfer.setDragImage(dragImage, 30, 45);
+
+        clearActiveDragSource();
+        activeDragSourceCard = card;
+        requestAnimationFrame(() => {
+          if(activeDragSourceCard === card) card.classList.add('dragging-source');
+        });
+
+        card.addEventListener('dragend', () => {
+          dragImage.remove();
+          setTimeout(() => {
+            if(!isTransferringCard) clearActiveDragSource();
+          }, 0);
+        }, { once:true });
       });
     }
 
@@ -1106,38 +1164,6 @@ async function animateDealCardToPlayer(playerId){
   return fly;
 }
 
-async function animateMoveCardByPoint(from, to, imageSrc, altText = '移動カード'){
-  if(!from || !to) return;
-  const fly = document.createElement('div');
-  fly.className = 'deal-fly-card';
-
-  const img = document.createElement('img');
-  img.alt = altText;
-  img.src = imageSrc;
-  fly.appendChild(img);
-
-  fly.style.left = `${from.x}px`;
-  fly.style.top = `${from.y}px`;
-  fly.style.transform = 'translate(-50%, -50%)';
-  fly.style.opacity = '1';
-  document.body.appendChild(fly);
-
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const anim = fly.animate([
-    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
-    { transform: `translate(-50%, -50%) translate(${dx * 0.55}px, ${dy * 0.55 - 18}px) rotate(8deg) scale(1.03)`, opacity: 1 },
-    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(12deg) scale(0.98)`, opacity: 0.98 }
-  ], {
-    duration: 420,
-    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-    fill: 'forwards'
-  });
-
-  await anim.finished.catch(() => {});
-  fly.remove();
-}
-
 function getNextPlayerId(){
   const n = latestPlayers.length;
   if(n < 2) return null;
@@ -1145,13 +1171,6 @@ function getNextPlayerId(){
   if(myIndex === -1) return null;
   const next = latestPlayers[(myIndex + 1) % n];
   return next ? next.id : null;
-}
-
-function getPlayerTagPoint(playerId){
-  const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
-  if(!tag) return null;
-  const rect = tag.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.bottom + 46 };
 }
 
 async function transferCardToNextPlayer(cardIndex){
@@ -1169,13 +1188,6 @@ async function transferCardToNextPlayer(cardIndex){
 
   isTransferringCard = true;
   try {
-    const fromCard = myHandEl.children[cardIndex];
-    const fromRect = fromCard ? fromCard.getBoundingClientRect() : null;
-    const fromPoint = fromRect ? { x: fromRect.left + fromRect.width / 2, y: fromRect.top + fromRect.height / 2 } : null;
-    const toPoint = getPlayerTagPoint(nextPlayerId);
-
-    await animateMoveCardByPoint(fromPoint, toPoint, cardImg(movingCard), '譲渡カード');
-
     const nextHand = state.hands[nextPlayerId] && Array.isArray(state.hands[nextPlayerId].cards)
       ? state.hands[nextPlayerId].cards.slice()
       : [];
@@ -1200,6 +1212,7 @@ async function transferCardToNextPlayer(cardIndex){
     await update(ref(db), patch);
   } finally {
     isTransferringCard = false;
+    clearActiveDragSource();
   }
 }
 
@@ -1285,27 +1298,6 @@ function renderPlayerCircle(players){
     tag.style.top = `${y}%`;
 
     const nextPlayerId = getNextPlayerId();
-    if(p.id === nextPlayerId){
-      tag.classList.add('next-turn-target');
-      tag.addEventListener('dragover', (e) => {
-        const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
-          ? state.hands[state.userId].cards
-          : [];
-        if(myHand.length !== 2) return;
-        e.preventDefault();
-        tag.classList.add('drop-ready');
-      });
-      tag.addEventListener('dragleave', () => {
-        tag.classList.remove('drop-ready');
-      });
-      tag.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        tag.classList.remove('drop-ready');
-        const idx = Number(e.dataTransfer.getData('text/plain'));
-        if(Number.isNaN(idx)) return;
-        await transferCardToNextPlayer(idx);
-      });
-    }
 
     tag.onclick = () => {
       if (p.id === state.userId) return;
@@ -1322,6 +1314,28 @@ function renderPlayerCircle(players){
     if (p.id !== state.userId){
       const miniHand = document.createElement('div');
       miniHand.className = 'mini-hand';
+
+      if(p.id === nextPlayerId){
+        miniHand.classList.add('next-turn-target');
+        miniHand.addEventListener('dragover', (e) => {
+          const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+            ? state.hands[state.userId].cards
+            : [];
+          if(myHand.length !== 2) return;
+          e.preventDefault();
+          miniHand.classList.add('drop-ready');
+        });
+        miniHand.addEventListener('dragleave', () => {
+          miniHand.classList.remove('drop-ready');
+        });
+        miniHand.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          miniHand.classList.remove('drop-ready');
+          const idx = Number(e.dataTransfer.getData('text/plain'));
+          if(Number.isNaN(idx)) return;
+          await transferCardToNextPlayer(idx);
+        });
+      }
 
       const handData = state.hands[p.id];
       const cards = (handData && Array.isArray(handData.cards)) ? handData.cards : [];
