@@ -458,7 +458,8 @@ const state = {
   hands: {},
   room: {},
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
-  deck: []        // ★ 山札（残り）配列
+  deck: [],       // ★ 山札（残り）配列
+  startAnimation: null
 };
 
 // DOM
@@ -505,6 +506,7 @@ let pendingSeatPlayerIdToSteal = null;
 let isRenderingSeatTabs = false;
 let latestPlayers = [];
 let startRunning = false;
+let lastStartAnimationId = null;
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -675,6 +677,16 @@ function subscribeDeck(){
     if (latestPlayers.length) renderPlayerCircle(latestPlayers);
   });
 }
+function subscribeStartAnimation(){
+  const animRef = ref(db, `rooms/${state.roomCode}/startAnimation`);
+  onValue(animRef, snap => {
+    const data = snap.val();
+    if(!data || !data.id || data.status !== 'run') return;
+    if(lastStartAnimationId === data.id) return;
+    lastStartAnimationId = data.id;
+    runStartAnimation(data);
+  });
+}
 
 // ========= 手札描画（画像表示） =========
 function renderMyHand(){
@@ -768,6 +780,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeHands();
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
+  subscribeStartAnimation();
 
   syncSeatUI();
 });
@@ -1047,6 +1060,26 @@ async function completeDealCardAnimation(fly, remainingCount){
   if(fly) fly.remove();
 }
 
+async function runStartAnimation(animData){
+  const deals = Number(animData.deals || 2);
+  const initialDeckCount = Number(animData.initialDeckCount || 0);
+  const startPlayerId = animData.startPlayerId;
+
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(deckWrap){
+    const badge = deckWrap.querySelector('[data-role="deck-count"]');
+    if(badge) badge.textContent = String(Math.max(initialDeckCount, 0));
+  }
+
+  await animateShuffle3();
+
+  for(let i = 0; i < deals; i++){
+    const fly = await animateDealCardToPlayer(startPlayerId);
+    const remaining = Math.max(initialDeckCount - (i + 1), 0);
+    await completeDealCardAnimation(fly, remaining);
+  }
+}
+
 function renderPlayerCircle(players){
   playerCircle.innerHTML = '';
   if (!players.length) return;
@@ -1186,15 +1219,29 @@ async function dealInitialHands(){
   resetPatch[`${base}/hands`] = {};
   resetPatch[`${base}/deck`] = enabledCards.slice();
   resetPatch[`${base}/startPlayerId`] = null;
+  resetPatch[`${base}/startAnimation`] = null;
   await update(ref(db), resetPatch);
   state.hands = {};
   renderHands();
   await wait(80);
 
-  await animateShuffle3();
-
   let deck = shuffle(enabledCards);
   const startPlayerId = players[Math.floor(Math.random() * players.length)];
+  const startAnimationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const animPatch = {};
+  animPatch[`rooms/${state.roomCode}/startAnimation`] = {
+    id: startAnimationId,
+    status: 'run',
+    startPlayerId,
+    deals: 2,
+    initialDeckCount: enabledCards.length,
+    createdAt: Date.now()
+  };
+  await update(ref(db), animPatch);
+
+  lastStartAnimationId = startAnimationId;
+  await runStartAnimation(animPatch[`rooms/${state.roomCode}/startAnimation`]);
 
   const hands = {};
   players.forEach(pid => {
@@ -1204,12 +1251,7 @@ async function dealInitialHands(){
   for (let i = 0; i < 2; i++){
     if(deck.length === 0) deck = shuffle(enabledCards);
     const drawn = deck.pop();
-    const fly = await animateDealCardToPlayer(startPlayerId);
-
     hands[startPlayerId].cards.push(drawn);
-    state.hands = hands;
-    renderHands();
-    await completeDealCardAnimation(fly, deck.length);
   }
 
   const patch = {};
@@ -1251,6 +1293,7 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/hands`)),
     remove(ref(db, `${base}/deck`)),        // ★ 山札も消す
     remove(ref(db, `${base}/startPlayerId`)),
+    remove(ref(db, `${base}/startAnimation`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
