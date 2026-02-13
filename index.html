@@ -554,6 +554,8 @@ let latestPlayers = [];
 let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
+let lastTransferAnimationId = null;
+let activeDragPreviewEl = null;
 let isTransferringCard = false;
 
 // ========= ユーティリティ =========
@@ -735,6 +737,17 @@ function subscribeStartAnimation(){
     runStartAnimation(data);
   });
 }
+function subscribeTransferAnimation(){
+  const animRef = ref(db, `rooms/${state.roomCode}/transferAnimation`);
+  onValue(animRef, snap => {
+    const data = snap.val();
+    if(!data || !data.id || data.status !== 'run') return;
+    if(lastTransferAnimationId === data.id) return;
+    lastTransferAnimationId = data.id;
+    if(data.fromPlayerId === state.userId) return;
+    runTransferAnimation(data);
+  });
+}
 
 // ========= 手札描画（画像表示） =========
 function renderMyHand(){
@@ -763,10 +776,26 @@ function renderMyHand(){
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', String(idx));
         e.dataTransfer.effectAllowed = 'move';
+
+        const preview = card.cloneNode(true);
+        preview.style.position = 'fixed';
+        preview.style.left = '-9999px';
+        preview.style.top = '-9999px';
+        preview.style.pointerEvents = 'none';
+        preview.style.transform = 'none';
+        preview.classList.remove('dragging');
+        document.body.appendChild(preview);
+        activeDragPreviewEl = preview;
+        e.dataTransfer.setDragImage(preview, 30, 45);
+
         card.classList.add('dragging');
       });
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
+        if(activeDragPreviewEl){
+          activeDragPreviewEl.remove();
+          activeDragPreviewEl = null;
+        }
       });
     }
 
@@ -846,6 +875,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
   subscribeStartAnimation();
+  subscribeTransferAnimation();
 
   syncSeatUI();
 });
@@ -1189,8 +1219,27 @@ async function transferCardToNextPlayer(cardIndex){
   const movingCard = myHand[cardIndex];
   if(!movingCard) return;
 
+  const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
+  const drawCard = deck.length ? deck[deck.length - 1] : null;
+  const deckFinal = drawCard ? deck.slice(0, -1) : deck;
+
   isTransferringCard = true;
+  let transferAnimId = null;
   try {
+    const transferAnim = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'run',
+      fromPlayerId: state.userId,
+      toPlayerId: nextPlayerId,
+      cardName: movingCard,
+      drawCard,
+      createdAt: Date.now()
+    };
+    transferAnimId = transferAnim.id;
+    const animPatch = {};
+    animPatch[`rooms/${state.roomCode}/transferAnimation`] = transferAnim;
+    await update(ref(db), animPatch);
+
     const fromCard = myHandEl.children[cardIndex];
     const fromRect = fromCard ? fromCard.getBoundingClientRect() : null;
     const fromPoint = fromRect ? { x: fromRect.left + fromRect.width / 2, y: fromRect.top + fromRect.height / 2 } : null;
@@ -1212,9 +1261,6 @@ async function transferCardToNextPlayer(cardIndex){
 
     await wait(200);
 
-    const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
-    const drawCard = deck.length ? deck[deck.length - 1] : null;
-    const deckFinal = drawCard ? deck.slice(0, -1) : deck;
     const nextFinal = drawCard ? [drawCard, ...afterTransfer] : afterTransfer;
 
     if(drawCard){
@@ -1228,6 +1274,44 @@ async function transferCardToNextPlayer(cardIndex){
     }
   } finally {
     isTransferringCard = false;
+    if(transferAnimId && state.roomCode){
+      const donePatch = {};
+      donePatch[`rooms/${state.roomCode}/transferAnimation/status`] = 'done';
+      await update(ref(db), donePatch);
+    }
+  }
+}
+
+async function waitForTransferAnimationLayout(fromPlayerId, toPlayerId){
+  for(let i = 0; i < 20; i++){
+    const from = getDealTargetPoint(fromPlayerId);
+    const to = getDealTargetPoint(toPlayerId);
+    if(from && to) return true;
+    await wait(80);
+  }
+  return false;
+}
+
+async function runTransferAnimation(animData){
+  if(!animData || !animData.id) return;
+  const fromPlayerId = animData.fromPlayerId;
+  const toPlayerId = animData.toPlayerId;
+  if(!fromPlayerId || !toPlayerId) return;
+
+  const ready = await waitForTransferAnimationLayout(fromPlayerId, toPlayerId);
+  if(!ready) return;
+
+  const fromPoint = getDealTargetPoint(fromPlayerId);
+  const toPoint = getDealTargetPoint(toPlayerId);
+  const movedCard = animData.cardName || null;
+  if(fromPoint && toPoint && movedCard){
+    await animateMoveCardByPoint(fromPoint, toPoint, cardImg(movedCard), '譲渡カード');
+  }
+
+  if(animData.drawCard){
+    await wait(130);
+    const fly = await animateDealCardToPlayer(toPlayerId);
+    if(fly) fly.remove();
   }
 }
 
