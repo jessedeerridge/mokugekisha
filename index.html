@@ -1021,11 +1021,21 @@ function renderCenterDeck(){
   playerCircle.appendChild(wrap);
 }
 
+function getMiniHandCenterPoint(playerId){
+  const miniHand = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"] .mini-hand`);
+  if(!miniHand) return null;
+  const rect = miniHand.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
 function getDealTargetPoint(playerId){
   if(playerId === state.userId){
     const rect = myHandEl.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + 42 };
   }
+  const miniPoint = getMiniHandCenterPoint(playerId);
+  if(miniPoint) return miniPoint;
+
   const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
   if(tag){
     const rect = tag.getBoundingClientRect();
@@ -1168,7 +1178,10 @@ function getNextPlayerId(){
   return next ? next.id : null;
 }
 
-function getPlayerTagPoint(playerId){
+function getTransferTargetPoint(playerId){
+  const miniPoint = getMiniHandCenterPoint(playerId);
+  if(miniPoint) return miniPoint;
+
   const tag = playerCircle.querySelector(`.player-tag[data-player-id="${playerId}"]`);
   if(!tag) return null;
   const rect = tag.getBoundingClientRect();
@@ -1194,7 +1207,7 @@ async function transferCardToNextPlayer(cardIndex){
     const fromCard = myHandEl.children[cardIndex];
     const fromRect = fromCard ? fromCard.getBoundingClientRect() : null;
     const fromPoint = fromRect ? { x: fromRect.left + fromRect.width / 2, y: fromRect.top + fromRect.height / 2 } : null;
-    const toPoint = getPlayerTagPoint(nextPlayerId);
+    const toPoint = getTransferTargetPoint(nextPlayerId);
 
     await animateMoveCardByPoint(fromPoint, toPoint, cardImg(movingCard), '譲渡カード');
 
