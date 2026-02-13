@@ -92,6 +92,22 @@
     transform:translate(-50%,-50%);
     z-index:10;
     display:flex;align-items:center;justify-content:center;
+    width:var(--zone-circle-size);
+    height:var(--zone-circle-size);
+  }
+  .deck-wrap::before,
+  .mini-hand::before{
+    content:'';
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:var(--zone-circle-size);
+    height:var(--zone-circle-size);
+    border:2px dashed rgba(17,17,17,.4);
+    border-radius:50%;
+    transform:translate(-50%,-50%);
+    box-sizing:border-box;
+    pointer-events:none;
   }
   :root{
     --offsetX:4px;
@@ -102,6 +118,7 @@
     --durOut:220ms;
     --durIn:220ms;
     --pause:20ms;
+    --zone-circle-size:96px;
   }
   .shuffle-deck{
     position:relative;
@@ -181,11 +198,12 @@
   .player-tag .mini-hand{
     position:absolute;left:50%;top:100%;
     transform:translate(-50%,6px);
-    width:140px;height:96px;
+    width:var(--zone-circle-size);
+    height:var(--zone-circle-size);
     pointer-events:none;
   }
   .player-tag .mini-card{
-    position:absolute;left:50%;top:0;
+    position:absolute;left:50%;top:8px;
     width:54px;height:81px;
     border-radius:10px;
     border:3px solid #fff;
@@ -1300,17 +1318,18 @@ function renderPlayerCircle(players){
       kickDialog.classList.remove('hidden');
     };
 
-    // 他プレイヤーの手札枚数だけ、裏面カード（54x81）を扇状表示
-    const handData = state.hands[p.id];
-    if (p.id !== state.userId && handData && Array.isArray(handData.cards) && handData.cards.length){
+    // 他プレイヤーの手札位置は常に表示し、手札があれば裏面カードを重ねる
+    if (p.id !== state.userId){
       const miniHand = document.createElement('div');
       miniHand.className = 'mini-hand';
 
-      const count = handData.cards.length;
+      const handData = state.hands[p.id];
+      const cards = (handData && Array.isArray(handData.cards)) ? handData.cards : [];
+      const count = cards.length;
       const spread = 70;
       const base = (count > 1) ? (-spread/2) : 0;
 
-      handData.cards.forEach((_name, idx2) => {
+      cards.forEach((_name, idx2) => {
         const card = document.createElement('div');
         card.className = 'mini-card';
 
