@@ -1238,9 +1238,8 @@ async function dealInitialHands(){
     initialDeckCount: enabledCards.length,
     createdAt: Date.now()
   };
-  await update(ref(db), animPatch);
-
   lastStartAnimationId = startAnimationId;
+  await update(ref(db), animPatch);
   await runStartAnimation(animPatch[`rooms/${state.roomCode}/startAnimation`]);
 
   const hands = {};
