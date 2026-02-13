@@ -744,13 +744,17 @@ function subscribeTransferAnimation(){
     if(lastTransferAnimationId === data.id) return;
     lastTransferAnimationId = data.id;
 
-    if(data.actorId === state.userId) return;
-    if(data.toPlayerId !== state.userId && !data.showToOthers) return;
-    if(!data.hasDrawCard) return;
+    (async () => {
+      if(data.fromPlayerId && data.toPlayerId){
+        const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
+        if(transferFly) transferFly.remove();
+      }
 
-    animateDealCardToPlayer(data.toPlayerId).then((fly) => {
-      if(fly) fly.remove();
-    });
+      if(data.hasDrawCard && data.toPlayerId){
+        const drawFly = await animateDealCardToPlayer(data.toPlayerId);
+        if(drawFly) drawFly.remove();
+      }
+    })();
   });
 }
 
@@ -1256,6 +1260,40 @@ async function animateDealCardToPlayer(playerId){
   return fly;
 }
 
+async function animateTransferCardBetweenPlayers(fromPlayerId, toPlayerId){
+  const from = getDealTargetPoint(fromPlayerId);
+  const to = getDealTargetPoint(toPlayerId);
+  if(!from || !to) return;
+
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+  const img = document.createElement('img');
+  img.alt = '受け渡しカード';
+  img.src = BACK_IMG;
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  fly.style.opacity = '1';
+  document.body.appendChild(fly);
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(-6deg) scale(1)', opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx * 0.58}px, ${dy * 0.58 - 10}px) rotate(4deg) scale(1.02)`, opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(8deg) scale(0.98)`, opacity: 0.98 }
+  ], {
+    duration: 360,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
+  return fly;
+}
+
 function getNextPlayerId(){
   const n = latestPlayers.length;
   if(n < 2) return null;
@@ -1287,29 +1325,31 @@ async function transferCardToNextPlayer(cardIndex){
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const afterTransfer = [...nextHand, movingCard];
 
-    // 1) まず受け取りカードだけ反映（ここで一度表示させる）
-    await update(ref(db), {
-      [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
-      [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: afterTransfer
-    });
-
     const deck = Array.isArray(state.deck) ? state.deck.slice() : [];
     const drawCard = deck.length ? deck[deck.length - 1] : null;
-    if(!drawCard) return;
 
     const transferAnimId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await update(ref(db), {
       [`rooms/${state.roomCode}/transferAnimation`]: {
         id: transferAnimId,
         actorId: state.userId,
+        fromPlayerId: state.userId,
         toPlayerId: nextPlayerId,
-        hasDrawCard: true,
+        hasDrawCard: !!drawCard,
         showToOthers: true,
         createdAt: Date.now()
       }
     });
 
-    // 2) ワンテンポ待ってから山札ドローを反映
+    await wait(380);
+
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
+      [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: afterTransfer
+    });
+
+    if(!drawCard) return;
+
     await wait(320);
 
     await update(ref(db), {
