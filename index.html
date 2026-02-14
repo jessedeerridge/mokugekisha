@@ -1156,39 +1156,42 @@ function renderCenterDeck(){
     wrap.dataset.transferTarget = 'deck';
   }
 
-  const shuffleDeck = document.createElement('div');
-  shuffleDeck.className = 'shuffle-deck';
+  const deckCount = (state.deck && state.deck.length) ? state.deck.length : 0;
+  if(deckCount > 0){
+    const shuffleDeck = document.createElement('div');
+    shuffleDeck.className = 'shuffle-deck';
 
-  const backCard = document.createElement('div');
-  backCard.className = 'shuffle-card back';
-  backCard.dataset.role = 'shuffle-back';
+    const backCard = document.createElement('div');
+    backCard.className = 'shuffle-card back';
+    backCard.dataset.role = 'shuffle-back';
 
-  const backImg = document.createElement('img');
-  backImg.alt = '山札';
-  backImg.src = BACK_IMG;
-  backImg.loading = 'lazy';
-  backCard.appendChild(backImg);
+    const backImg = document.createElement('img');
+    backImg.alt = '山札';
+    backImg.src = BACK_IMG;
+    backImg.loading = 'lazy';
+    backCard.appendChild(backImg);
 
-  const frontCard = document.createElement('div');
-  frontCard.className = 'shuffle-card front';
-  frontCard.dataset.role = 'shuffle-front';
+    const frontCard = document.createElement('div');
+    frontCard.className = 'shuffle-card front';
+    frontCard.dataset.role = 'shuffle-front';
 
-  const frontImg = document.createElement('img');
-  frontImg.alt = '山札';
-  frontImg.src = BACK_IMG;
-  frontImg.loading = 'lazy';
-  frontCard.appendChild(frontImg);
+    const frontImg = document.createElement('img');
+    frontImg.alt = '山札';
+    frontImg.src = BACK_IMG;
+    frontImg.loading = 'lazy';
+    frontCard.appendChild(frontImg);
 
-  shuffleDeck.appendChild(backCard);
-  shuffleDeck.appendChild(frontCard);
+    shuffleDeck.appendChild(backCard);
+    shuffleDeck.appendChild(frontCard);
 
-  const badge = document.createElement('div');
-  badge.className = 'count-badge';
-  badge.dataset.role = 'deck-count';
-  badge.textContent = String((state.deck && state.deck.length) ? state.deck.length : 0);
-  frontCard.appendChild(badge);
+    const badge = document.createElement('div');
+    badge.className = 'count-badge';
+    badge.dataset.role = 'deck-count';
+    badge.textContent = String(deckCount);
+    frontCard.appendChild(badge);
 
-  wrap.appendChild(shuffleDeck);
+    wrap.appendChild(shuffleDeck);
+  }
 
   if(turnTarget === 'deck'){
     wrap.addEventListener('dragover', (e) => {
