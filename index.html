@@ -117,8 +117,8 @@
     pointer-events:none;
   }
   :root{
-    --offsetX:4px;
-    --offsetY:4px;
+    --offsetX:0.4px;
+    --offsetY:0.4px;
     --outX:66px;
     --tiltBase:0deg;
     --tiltMore:10deg;
@@ -1185,34 +1185,38 @@ function renderCenterDeck(){
     const shuffleDeck = document.createElement('div');
     shuffleDeck.className = 'shuffle-deck';
 
-    const backCard = document.createElement('div');
-    backCard.className = 'shuffle-card back';
-    backCard.dataset.role = 'shuffle-back';
+    for(let i = 0; i < deckCount; i++){
+      const card = document.createElement('div');
+      const offset = (deckCount - 1 - i) * 0.4;
+      const isFront = i === deckCount - 1;
+      const isBack = i === deckCount - 2;
 
-    const backImg = document.createElement('img');
-    backImg.alt = '山札';
-    backImg.src = BACK_IMG;
-    backImg.loading = 'lazy';
-    backCard.appendChild(backImg);
+      card.className = `shuffle-card${isFront ? ' front' : ''}${isBack ? ' back' : ''}`;
+      card.style.zIndex = String(i + 1);
 
-    const frontCard = document.createElement('div');
-    frontCard.className = 'shuffle-card front';
-    frontCard.dataset.role = 'shuffle-front';
+      if(!isFront && !isBack){
+        card.style.transform = `translate(${offset}px, ${offset}px) rotate(0deg)`;
+      }
 
-    const frontImg = document.createElement('img');
-    frontImg.alt = '山札';
-    frontImg.src = BACK_IMG;
-    frontImg.loading = 'lazy';
-    frontCard.appendChild(frontImg);
+      if(isFront) card.dataset.role = 'shuffle-front';
+      if(isBack) card.dataset.role = 'shuffle-back';
 
-    shuffleDeck.appendChild(backCard);
-    shuffleDeck.appendChild(frontCard);
+      const img = document.createElement('img');
+      img.alt = '山札';
+      img.src = BACK_IMG;
+      img.loading = 'lazy';
+      card.appendChild(img);
+      shuffleDeck.appendChild(card);
+    }
+
+    const frontCard = shuffleDeck.querySelector('[data-role="shuffle-front"]')
+      || shuffleDeck.querySelector('.shuffle-card');
 
     const badge = document.createElement('div');
     badge.className = 'count-badge';
     badge.dataset.role = 'deck-count';
     badge.textContent = String(deckCount);
-    frontCard.appendChild(badge);
+    if(frontCard) frontCard.appendChild(badge);
 
     wrap.appendChild(shuffleDeck);
   }
