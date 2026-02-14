@@ -102,6 +102,32 @@
     width:var(--zone-circle-size);
     height:var(--zone-circle-size);
   }
+  .deck-excluded-zone{
+    position:absolute;
+    left:calc(100% + 14px);
+    top:50%;
+    transform:translateY(-50%);
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+  .deck-excluded-card{
+    width:54px;
+    height:81px;
+    border-radius:10px;
+    border:3px solid #fff;
+    box-shadow:0 0 0 1px #000, 0 4px 12px rgba(0,0,0,.18);
+    background:#fff;
+    overflow:hidden;
+  }
+  .deck-excluded-card img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    transform:scale(1.05);
+    transform-origin:center;
+  }
   .deck-wrap::before,
   .mini-hand::before{
     content:'';
@@ -506,6 +532,8 @@ const CARDS = [
   "探偵",
 ];
 const SPECIAL_DECK_OFFSET_CARD = '執事';
+const MURDERER_CARD = '殺人鬼';
+const START_EXCLUDED_COUNT = 2;
 
 // ▼ 状態
 const state = {
@@ -518,7 +546,8 @@ const state = {
   room: {},
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
   deck: [],       // ★ 山札（残り）配列
-  startAnimation: null
+  startAnimation: null,
+  startExcludedCards: []
 };
 
 // DOM
@@ -591,6 +620,23 @@ function shuffle(arr){
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+function excludeCardsForButlerRule(baseDeck){
+  const deck = Array.isArray(baseDeck) ? baseDeck.slice() : [];
+  const hasButler = deck.includes(SPECIAL_DECK_OFFSET_CARD);
+  if(!hasButler) return { deck, excludedCards: [] };
+
+  const candidates = deck
+    .map((name, idx) => ({ name, idx }))
+    .filter(item => item.name !== MURDERER_CARD);
+
+  if(!candidates.length) return { deck, excludedCards: [] };
+
+  const picked = shuffle(candidates).slice(0, Math.min(START_EXCLUDED_COUNT, candidates.length));
+  const removedIndexSet = new Set(picked.map(item => item.idx));
+  const excludedCards = picked.map(item => item.name);
+  const nextDeck = deck.filter((_name, idx) => !removedIndexSet.has(idx));
+  return { deck: nextDeck, excludedCards };
 }
 function cardImg(name){
   // 画像名.jpg ルール
@@ -711,9 +757,11 @@ function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   onValue(roomRef, snap => {
     state.room = snap.val() || {};
+    state.startExcludedCards = Array.isArray(state.room.startExcludedCards) ? state.room.startExcludedCards : [];
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
     syncSeatUI();
+    if (latestPlayers.length) renderPlayerCircle(latestPlayers);
   });
 }
 function subscribeHostState(){
@@ -1222,6 +1270,29 @@ function renderCenterDeck(){
     wrap.appendChild(shuffleDeck);
   }
 
+  const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
+  if(excludedCards.length){
+    const excludedZone = document.createElement('div');
+    excludedZone.className = 'deck-excluded-zone';
+    excludedZone.dataset.role = 'deck-excluded-zone';
+
+    excludedCards.forEach((name, idx) => {
+      const card = document.createElement('div');
+      card.className = 'deck-excluded-card';
+      card.dataset.role = 'deck-excluded-card';
+      card.dataset.index = String(idx);
+
+      const img = document.createElement('img');
+      img.alt = `除外カード${idx + 1}`;
+      img.src = cardImg(name);
+      img.loading = 'lazy';
+      card.appendChild(img);
+      excludedZone.appendChild(card);
+    });
+
+    wrap.appendChild(excludedZone);
+  }
+
   if(turnTarget === 'deck'){
     wrap.addEventListener('dragover', (e) => {
       const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
@@ -1244,6 +1315,55 @@ function renderCenterDeck(){
   }
 
   playerCircle.appendChild(wrap);
+}
+
+async function animateExcludeCardsFromDeck(excludedCards){
+  if(!Array.isArray(excludedCards) || !excludedCards.length) return;
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+
+  const slots = Array.from(deckWrap.querySelectorAll('[data-role="deck-excluded-card"]'));
+  if(!slots.length) return;
+
+  const from = getDeckCenterPoint();
+  if(!from) return;
+
+  for(let i = 0; i < Math.min(excludedCards.length, slots.length); i++){
+    const slot = slots[i];
+    const slotRect = slot.getBoundingClientRect();
+    const to = { x: slotRect.left + slotRect.width / 2, y: slotRect.top + slotRect.height / 2 };
+
+    slot.style.visibility = 'hidden';
+
+    const fly = document.createElement('div');
+    fly.className = 'deal-fly-card';
+    const img = document.createElement('img');
+    img.alt = `除外カード${i + 1}`;
+    img.src = cardImg(excludedCards[i]);
+    fly.appendChild(img);
+    fly.style.left = `${from.x}px`;
+    fly.style.top = `${from.y}px`;
+    fly.style.transform = 'translate(-50%, -50%)';
+    fly.style.opacity = '1';
+    document.body.appendChild(fly);
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const anim = fly.animate([
+      { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
+      { transform: `translate(-50%, -50%) translate(${dx * 0.65}px, ${dy * 0.65 - 10}px) rotate(8deg) scale(1.03)`, opacity: 1 },
+      { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(0deg) scale(1)`, opacity: 1 }
+    ], {
+      duration: speedAdjustedMs(360),
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'forwards'
+    });
+
+    await anim.finished.catch(() => {});
+    fly.remove();
+    slot.style.visibility = '';
+    await wait(45);
+  }
 }
 
 function getDealTargetPoint(playerId){
@@ -1666,10 +1786,19 @@ async function runStartAnimation(animData){
   const initialDeckCount = Number(animData.initialDeckCount || 0);
   const startPlayerId = animData.startPlayerId;
   const drawnCards = Array.isArray(animData.drawnCards) ? animData.drawnCards : [];
+  const excludedCards = Array.isArray(animData.excludedCards) ? animData.excludedCards : [];
 
   try {
     const ready = await waitForAnimationLayout(startPlayerId);
     if(!ready) return;
+
+    if(excludedCards.length){
+      state.startExcludedCards = excludedCards.slice();
+      if (latestPlayers.length) renderPlayerCircle(latestPlayers);
+      await wait(60);
+      await animateExcludeCardsFromDeck(excludedCards);
+      await wait(80);
+    }
 
     setDeckBadgeCount(initialDeckCount);
     await animateShuffle3();
@@ -1855,18 +1984,25 @@ async function dealInitialHands(){
   const resetPatch = {};
   resetPatch[`${base}/hands`] = {};
   resetPatch[`${base}/deck`] = enabledCards.slice();
+  resetPatch[`${base}/startExcludedCards`] = [];
   resetPatch[`${base}/startPlayerId`] = null;
   resetPatch[`${base}/startAnimation`] = null;
   await update(ref(db), resetPatch);
   state.hands = {};
+  state.startExcludedCards = [];
   renderHands();
   await wait(80);
 
-  let deck = shuffle(enabledCards);
+  const { deck: preparedDeck, excludedCards } = excludeCardsForButlerRule(enabledCards);
+  if(preparedDeck.length < 2){
+    alert('執事の効果で除外後、配布に必要なカードが不足しました。デッキ枚数を増やしてください。');
+    return;
+  }
+  let deck = shuffle(preparedDeck);
   const startPlayerId = players[Math.floor(Math.random() * players.length)];
   const drawnCards = [];
   for (let i = 0; i < 2; i++){
-    if(deck.length === 0) deck = shuffle(enabledCards);
+    if(deck.length === 0) deck = shuffle(preparedDeck);
     drawnCards.push(deck.pop());
   }
   const startAnimationId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1878,9 +2014,11 @@ async function dealInitialHands(){
     startPlayerId,
     deals: 2,
     drawnCards,
-    initialDeckCount: enabledCards.length,
+    initialDeckCount: preparedDeck.length,
+    excludedCards,
     createdAt: Date.now()
   };
+  animPatch[`rooms/${state.roomCode}/startExcludedCards`] = excludedCards;
   lastStartAnimationId = startAnimationId;
   await update(ref(db), animPatch);
   await runStartAnimation(animPatch[`rooms/${state.roomCode}/startAnimation`]);
@@ -1894,6 +2032,7 @@ async function dealInitialHands(){
   const patch = {};
   patch[`rooms/${state.roomCode}/hands`] = hands;
   patch[`rooms/${state.roomCode}/deck`]  = deck;
+  patch[`rooms/${state.roomCode}/startExcludedCards`] = excludedCards;
   patch[`rooms/${state.roomCode}/startPlayerId`] = startPlayerId;
   await update(ref(db), patch);
 }
@@ -1929,6 +2068,7 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/tables`)),
     remove(ref(db, `${base}/hands`)),
     remove(ref(db, `${base}/deck`)),        // ★ 山札も消す
+    remove(ref(db, `${base}/startExcludedCards`)),
     remove(ref(db, `${base}/startPlayerId`)),
     remove(ref(db, `${base}/startAnimation`)),
     remove(ref(db, `${base}/transferAnimation`)),
