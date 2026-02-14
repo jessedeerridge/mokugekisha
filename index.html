@@ -1574,14 +1574,10 @@ function applyLocalTransferPreview(fromPlayerId, toPlayerId, cardName){
     : [];
 
   const removeIndex = fromBase.lastIndexOf(cardName);
-  const removedFromSender = removeIndex !== -1;
-  if(removedFromSender){
-    fromBase.splice(removeIndex, 1);
-  }
+  if(removeIndex === -1) return;
 
-  if(removedFromSender || !toBase.includes(cardName)){
-    toBase.push(cardName);
-  }
+  fromBase.splice(removeIndex, 1);
+  toBase.push(cardName);
 
   nextHands[fromPlayerId] = { cards: fromBase };
   nextHands[toPlayerId] = { cards: toBase };
@@ -1598,9 +1594,9 @@ function applyLocalDeckTransferPreview(fromPlayerId, cardName){
     : [];
 
   const removeIndex = fromBase.lastIndexOf(cardName);
-  if(removeIndex !== -1){
-    fromBase.splice(removeIndex, 1);
-  }
+  if(removeIndex === -1) return;
+
+  fromBase.splice(removeIndex, 1);
 
   nextHands[fromPlayerId] = { cards: fromBase };
   state.hands = nextHands;
