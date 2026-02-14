@@ -750,6 +750,7 @@ function subscribeTransferAnimation(){
       if(data.fromPlayerId && data.toPlayerId && !isDraggingPlayer){
         const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
         if(transferFly) transferFly.remove();
+        applyLocalTransferPreview(data.fromPlayerId, data.toPlayerId, data.transferCardName);
       }
 
       if(data.hasDrawCard && data.toPlayerId){
@@ -1350,6 +1351,7 @@ async function transferCardToNextPlayer(cardIndex){
         actorId: state.userId,
         fromPlayerId: state.userId,
         toPlayerId: nextPlayerId,
+        transferCardName: movingCard,
         hasDrawCard: !!drawCard,
         showToOthers: true,
         createdAt: Date.now()
@@ -1391,6 +1393,33 @@ async function waitForAnimationLayout(startPlayerId){
     await wait(100);
   }
   return false;
+}
+
+function applyLocalTransferPreview(fromPlayerId, toPlayerId, cardName){
+  if(!fromPlayerId || !toPlayerId || !cardName) return;
+
+  const nextHands = { ...state.hands };
+  const fromBase = nextHands[fromPlayerId] && Array.isArray(nextHands[fromPlayerId].cards)
+    ? nextHands[fromPlayerId].cards.slice()
+    : [];
+  const toBase = nextHands[toPlayerId] && Array.isArray(nextHands[toPlayerId].cards)
+    ? nextHands[toPlayerId].cards.slice()
+    : [];
+
+  const removeIndex = fromBase.lastIndexOf(cardName);
+  const removedFromSender = removeIndex !== -1;
+  if(removedFromSender){
+    fromBase.splice(removeIndex, 1);
+  }
+
+  if(removedFromSender || !toBase.includes(cardName)){
+    toBase.push(cardName);
+  }
+
+  nextHands[fromPlayerId] = { cards: fromBase };
+  nextHands[toPlayerId] = { cards: toBase };
+  state.hands = nextHands;
+  renderHands();
 }
 
 function applyLocalDealPreview(playerId, cardName){
