@@ -570,7 +570,12 @@ let runningStartAnimationId = null;
 let lastTransferAnimationId = null;
 let isTransferringCard = false;
 let activePointerDrag = null;
-const TRANSFER_TO_DRAW_DELAY_MS = 900;
+const CARD_MOVE_SPEED_RATIO = 0.7;
+const TRANSFER_TO_DRAW_DELAY_MS = speedAdjustedMs(900);
+const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
+const TRANSFER_TO_DECK_SYNC_DELAY_MS = speedAdjustedMs(360);
+const DEAL_FLY_DURATION_MS = speedAdjustedMs(420);
+const TRANSFER_FLY_DURATION_MS = speedAdjustedMs(360);
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -600,11 +605,20 @@ function cssMs(name){
 function wait(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+function speedAdjustedMs(baseMs){
+  return Math.round(baseMs / CARD_MOVE_SPEED_RATIO);
+}
+function applyCardAnimationSpeed(){
+  document.documentElement.style.setProperty('--durOut', `${speedAdjustedMs(220)}ms`);
+  document.documentElement.style.setProperty('--durIn', `${speedAdjustedMs(220)}ms`);
+  document.documentElement.style.setProperty('--pause', `${speedAdjustedMs(20)}ms`);
+}
 function defaultDeckConfig(){
   const o = {};
   CARDS.forEach(n => o[n] = true); // 初期は全部濃い（投入）
   return o;
 }
+applyCardAnimationSpeed();
 function updateDeckOffsetByConfig(){
   const hasSpecialCard = (state.deckConfig[SPECIAL_DECK_OFFSET_CARD] !== false);
   document.documentElement.style.setProperty('--deck-offset-x', hasSpecialCard ? '45px' : '0px');
@@ -1324,7 +1338,7 @@ async function animateDealCardToPlayer(playerId){
     { transform: `translate(-50%, -50%) translate(${dx * 0.55}px, ${dy * 0.55 - 18}px) rotate(8deg) scale(1.03)`, opacity: 1 },
     { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(12deg) scale(0.98)`, opacity: 0.98 }
   ], {
-    duration: 420,
+    duration: DEAL_FLY_DURATION_MS,
     easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
     fill: 'forwards'
   });
@@ -1358,7 +1372,7 @@ async function animateTransferCardBetweenPlayers(fromPlayerId, toPlayerId){
     { transform: `translate(-50%, -50%) translate(${dx * 0.58}px, ${dy * 0.58 - 10}px) rotate(4deg) scale(1.02)`, opacity: 1 },
     { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(8deg) scale(0.98)`, opacity: 0.98 }
   ], {
-    duration: 360,
+    duration: TRANSFER_FLY_DURATION_MS,
     easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
     fill: 'forwards'
   });
@@ -1392,7 +1406,7 @@ async function animateTransferCardToDeck(fromPlayerId){
     { transform: `translate(-50%, -50%) translate(${dx * 0.56}px, ${dy * 0.56 - 12}px) rotate(3deg) scale(1.02)`, opacity: 1 },
     { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(8deg) scale(0.98)`, opacity: 0.98 }
   ], {
-    duration: 360,
+    duration: TRANSFER_FLY_DURATION_MS,
     easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
     fill: 'forwards'
   });
@@ -1467,7 +1481,7 @@ async function transferCardToNextPlayer(cardIndex){
       }
     });
 
-    await wait(380);
+    await wait(TRANSFER_TO_PLAYER_SYNC_DELAY_MS);
 
     await update(ref(db), {
       [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
@@ -1528,7 +1542,7 @@ async function transferCardToDeck(cardIndex){
       }
     });
 
-    await wait(360);
+    await wait(TRANSFER_TO_DECK_SYNC_DELAY_MS);
 
     state.hands = {
       ...state.hands,
