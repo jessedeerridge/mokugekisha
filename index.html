@@ -414,6 +414,69 @@
     line-height:1.15;
     white-space:nowrap;
   }
+
+  .announce-pop{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%, -50%);
+    padding:8px 16px;
+    border-radius:6px;
+    background:rgba(17,17,17,.92);
+    color:#fff;
+    font-size:22px;
+    font-weight:900;
+    letter-spacing:.04em;
+    box-shadow:0 12px 24px rgba(0,0,0,.3);
+    z-index:420;
+    pointer-events:none;
+    opacity:0;
+    white-space:nowrap;
+    text-align:center;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .announce-pop.run{
+    animation:announceSlide 2s ease-in-out forwards;
+  }
+  @keyframes announceSlide{
+    0%{ transform:translate(-180vw, -50%); opacity:0; }
+    16%{ transform:translate(-50%, -50%); opacity:1; }
+    66%{ transform:translate(-50%, -50%); opacity:1; }
+    100%{ transform:translate(160vw, -50%); opacity:0; }
+  }
+
+  .discussion-timer{
+    position:absolute;
+    top:14px;
+    right:14px;
+    width:72px;
+    height:72px;
+    border-radius:50%;
+    background:#2563eb;
+    border:1.5px solid #4b2e1f;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:410;
+    box-shadow:none;
+  }
+  .discussion-timer.visible{ display:flex; }
+  .discussion-timer .inner{
+    width:58px;
+    height:58px;
+    border-radius:50%;
+    background:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    color:#1e3a8a;
+    font-weight:900;
+    line-height:1;
+    font-size:20px;
+  }
 </style>
 </head>
 <body>
@@ -445,7 +508,12 @@
       <div id="myHand" class="my-hand"></div>
     </div>
   </div>
+  <div id="discussionTimer" class="discussion-timer" aria-live="polite">
+    <div id="discussionTimerInner" class="inner">04:00</div>
+  </div>
 </main>
+
+<div id="announcePop" class="announce-pop" aria-live="polite"></div>
 
 <!-- ★ 参加者：ホスト人数選択中ポップ -->
 <div id="hostSelectingPop" class="host-selecting-pop hidden">ホストが人数を選択中</div>
@@ -597,6 +665,9 @@ const helpBtn = document.getElementById('helpBtn');
 const helpBackdrop = document.getElementById('helpBackdrop');
 const btnHelpClose = document.getElementById('btnHelpClose');
 const helpBody = document.getElementById('helpBody');
+const announcePop = document.getElementById('announcePop');
+const discussionTimer = document.getElementById('discussionTimer');
+const discussionTimerInner = document.getElementById('discussionTimerInner');
 
 /* 既存：一時保持など */
 let pendingSeatIndexToSteal = null;
@@ -609,6 +680,9 @@ let runningStartAnimationId = null;
 let lastTransferAnimationId = null;
 let isTransferringCard = false;
 let activePointerDrag = null;
+let lastDiscussionPhaseId = null;
+let discussionTimerInterval = null;
+let discussionPhaseEnded = false;
 const CARD_MOVE_SPEED_RATIO = 0.7;
 const TRANSFER_TO_DRAW_DELAY_MS = speedAdjustedMs(900);
 const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
@@ -618,6 +692,7 @@ const TRANSFER_FLY_DURATION_MS = speedAdjustedMs(360);
 const EXILE_SLIDE_DURATION_MS = speedAdjustedMs(360);
 const KILLER_PEEK_DURATION_MS = speedAdjustedMs(320);
 const KILLER_RETURN_DURATION_MS = speedAdjustedMs(260);
+const DISCUSSION_DURATION_SEC = 4 * 60;
 const KILLER_PEEK_OFFSET_X = -52;
 const KILLER_PEEK_OFFSET_Y = -8;
 const KILLER_PEEK_ROTATE_DEG = -4;
@@ -752,6 +827,67 @@ function updateHostUI(){
   helpBtn.classList.add('visible');
 }
 
+function showAnnouncePop(text){
+  announcePop.textContent = text;
+  announcePop.classList.remove('run');
+  void announcePop.offsetWidth;
+  announcePop.classList.add('run');
+}
+
+function clearDiscussionTimer(){
+  if(discussionTimerInterval){
+    clearInterval(discussionTimerInterval);
+    discussionTimerInterval = null;
+  }
+  discussionTimer.classList.remove('visible');
+  discussionTimerInner.textContent = '04:00';
+}
+
+function formatTimerText(totalSec){
+  const sec = Math.max(0, totalSec | 0);
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return `${String(min).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+}
+
+function runDiscussionTimer(startedAtMs){
+  const startMs = Number(startedAtMs || Date.now());
+  const endMs = startMs + DISCUSSION_DURATION_SEC * 1000;
+
+  clearDiscussionTimer();
+  discussionPhaseEnded = false;
+  discussionTimer.classList.add('visible');
+
+  const tick = () => {
+    const remainMs = Math.max(0, endMs - Date.now());
+    const remainSec = Math.ceil(remainMs / 1000);
+    discussionTimerInner.textContent = formatTimerText(remainSec);
+
+    if(remainMs <= 0 && !discussionPhaseEnded){
+      discussionPhaseEnded = true;
+      clearDiscussionTimer();
+      showAnnouncePop('投票！');
+    }
+  };
+
+  tick();
+  discussionTimerInterval = setInterval(tick, 250);
+}
+
+function syncDiscussionPhase(data){
+  if(!data || !data.id){
+    lastDiscussionPhaseId = null;
+    discussionPhaseEnded = false;
+    clearDiscussionTimer();
+    return;
+  }
+
+  if(lastDiscussionPhaseId === data.id) return;
+  lastDiscussionPhaseId = data.id;
+  showAnnouncePop('議論開始！');
+  runDiscussionTimer(data.startedAt);
+}
+
 // ========= Firebase subscribe =========
 function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
@@ -759,6 +895,7 @@ function subscribeRoom(){
     state.room = snap.val() || {};
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
+    syncDiscussionPhase(state.room.discussionPhase || null);
     syncSeatUI();
   });
 }
@@ -1748,7 +1885,12 @@ async function transferCardToDeck(cardIndex){
 
     await update(ref(db), {
       [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
-      [`rooms/${state.roomCode}/deck`]: nextDeck
+      [`rooms/${state.roomCode}/deck`]: nextDeck,
+      [`rooms/${state.roomCode}/discussionPhase`]: {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        startedAt: Date.now(),
+        durationSec: DISCUSSION_DURATION_SEC
+      }
     });
 
     return true;
@@ -2069,6 +2211,7 @@ async function dealInitialHands(){
   resetPatch[`${base}/deck`] = enabledCards.slice();
   resetPatch[`${base}/startPlayerId`] = null;
   resetPatch[`${base}/startAnimation`] = null;
+  resetPatch[`${base}/discussionPhase`] = null;
   await update(ref(db), resetPatch);
   state.hands = {};
   state.startExcludedCards = [];
@@ -2161,6 +2304,7 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/startPlayerId`)),
     remove(ref(db, `${base}/startAnimation`)),
     remove(ref(db, `${base}/transferAnimation`)),
+    remove(ref(db, `${base}/discussionPhase`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
