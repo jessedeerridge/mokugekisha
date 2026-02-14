@@ -204,6 +204,35 @@
     box-shadow:0 2px 8px rgba(0,0,0,.25);
     pointer-events:none;
   }
+  .deck-exile-tray{
+    position:absolute;
+    left:calc(100% + 12px);
+    top:50%;
+    transform:translateY(-50%);
+    display:flex;
+    gap:8px;
+    pointer-events:none;
+    opacity:0;
+  }
+  .deck-exile-tray.visible{
+    opacity:1;
+  }
+  .deck-exile-card{
+    width:54px;
+    height:81px;
+    border-radius:10px;
+    border:3px solid #fff;
+    box-shadow:0 0 0 1px #000, 0 4px 12px rgba(0,0,0,.2);
+    background:#fff;
+    overflow:hidden;
+  }
+  .deck-exile-card img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    transform:scale(1.05);
+  }
 
   /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
   .player-tag .mini-hand{
@@ -576,6 +605,7 @@ const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
 const TRANSFER_TO_DECK_SYNC_DELAY_MS = speedAdjustedMs(360);
 const DEAL_FLY_DURATION_MS = speedAdjustedMs(420);
 const TRANSFER_FLY_DURATION_MS = speedAdjustedMs(360);
+const EXILE_SLIDE_DURATION_MS = speedAdjustedMs(360);
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -1174,6 +1204,11 @@ function renderCenterDeck(){
   wrap.className = 'deck-wrap';
   wrap.dataset.role = 'deck';
 
+  const exileTray = document.createElement('div');
+  exileTray.className = 'deck-exile-tray';
+  exileTray.dataset.role = 'deck-exile-tray';
+  wrap.appendChild(exileTray);
+
   const turnTarget = getTurnTransferTarget();
   if(turnTarget === 'deck'){
     wrap.classList.add('next-turn-target');
@@ -1350,6 +1385,77 @@ async function animateDealCardToPlayer(playerId){
 
   await anim.finished.catch(() => {});
   return fly;
+}
+
+
+function clearDeckExileCards(){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+  const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
+  if(!tray) return;
+  tray.classList.remove('visible');
+  tray.innerHTML = '';
+}
+
+function appendDeckExileCard(cardName){
+  if(!cardName) return;
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+  const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
+  if(!tray) return;
+
+  const card = document.createElement('div');
+  card.className = 'deck-exile-card';
+
+  const img = document.createElement('img');
+  img.alt = `除外カード:${cardName}`;
+  img.src = cardImg(cardName);
+  img.loading = 'lazy';
+
+  card.appendChild(img);
+  tray.appendChild(card);
+  tray.classList.add('visible');
+}
+
+async function animateExileCardFromDeck(cardName){
+  const from = getDeckCenterPoint();
+  if(!from || !cardName) return;
+
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  const tray = deckWrap ? deckWrap.querySelector('[data-role="deck-exile-tray"]') : null;
+  if(!tray) return;
+
+  const currentCount = tray.querySelectorAll('.deck-exile-card').length;
+  const targetX = from.x + 82 + currentCount * 62;
+  const targetY = from.y;
+
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+  const img = document.createElement('img');
+  img.alt = `除外カード:${cardName}`;
+  img.src = cardImg(cardName);
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  fly.style.opacity = '1';
+  document.body.appendChild(fly);
+
+  const dx = targetX - from.x;
+  const dy = targetY - from.y;
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(8deg) scale(1)`, opacity: 1 }
+  ], {
+    duration: EXILE_SLIDE_DURATION_MS,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
+  appendDeckExileCard(cardName);
+  fly.remove();
 }
 
 async function animateTransferCardBetweenPlayers(fromPlayerId, toPlayerId){
@@ -1666,17 +1772,30 @@ async function runStartAnimation(animData){
   const initialDeckCount = Number(animData.initialDeckCount || 0);
   const startPlayerId = animData.startPlayerId;
   const drawnCards = Array.isArray(animData.drawnCards) ? animData.drawnCards : [];
+  const excludedCards = Array.isArray(animData.excludedCards) ? animData.excludedCards : [];
 
   try {
     const ready = await waitForAnimationLayout(startPlayerId);
     if(!ready) return;
 
+    clearDeckExileCards();
     setDeckBadgeCount(initialDeckCount);
+
+    for(let i = 0; i < excludedCards.length; i++){
+      const excludedName = excludedCards[i] || null;
+      if(!excludedName) continue;
+      setDeckBadgeCount(Math.max(initialDeckCount - (i + 1), 0));
+      await animateExileCardFromDeck(excludedName);
+      await wait(70);
+    }
+
+    const deckCountAfterExclusion = Math.max(initialDeckCount - excludedCards.length, 0);
+    setDeckBadgeCount(deckCountAfterExclusion);
     await animateShuffle3();
 
     for(let i = 0; i < deals; i++){
       const dealtName = drawnCards[i] || null;
-      const remaining = Math.max(initialDeckCount - (i + 1), 0);
+      const remaining = Math.max(deckCountAfterExclusion - (i + 1), 0);
       setDeckBadgeCount(remaining);
       const fly = await animateDealCardToPlayer(startPlayerId);
       applyLocalDealPreview(startPlayerId, dealtName);
@@ -1863,6 +1982,21 @@ async function dealInitialHands(){
   await wait(80);
 
   let deck = shuffle(enabledCards);
+  const hasButler = enabledCards.includes(SPECIAL_DECK_OFFSET_CARD);
+  const excludedCards = [];
+
+  if(hasButler){
+    for(let i = 0; i < 2; i++){
+      const candidates = deck
+        .map((name, idx) => ({ name, idx }))
+        .filter(({ name }) => name !== '殺人鬼');
+      if(!candidates.length) break;
+      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      excludedCards.push(picked.name);
+      deck.splice(picked.idx, 1);
+    }
+  }
+
   const startPlayerId = players[Math.floor(Math.random() * players.length)];
   const drawnCards = [];
   for (let i = 0; i < 2; i++){
@@ -1878,6 +2012,7 @@ async function dealInitialHands(){
     startPlayerId,
     deals: 2,
     drawnCards,
+    excludedCards,
     initialDeckCount: enabledCards.length,
     createdAt: Date.now()
   };
