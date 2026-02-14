@@ -799,6 +799,7 @@ function subscribeTransferAnimation(){
 
       if(data.hasDrawCard && data.toPlayerId){
         await wait(TRANSFER_TO_DRAW_DELAY_MS);
+        applyLocalDeckDrawPreview(data.drawCardName);
         const drawFly = await animateDealCardToPlayer(data.toPlayerId);
         if(drawFly) drawFly.remove();
       }
@@ -1480,6 +1481,7 @@ async function transferCardToNextPlayer(cardIndex){
         toPlayerId: nextPlayerId,
         transferCardName: movingCard,
         hasDrawCard: !!drawCard,
+        drawCardName: drawCard,
         showToOthers: true,
         createdAt: Date.now()
       }
@@ -1636,6 +1638,25 @@ function applyLocalDealPreview(playerId, cardName){
   renderHands();
 }
 
+function applyLocalDeckDrawPreview(cardName){
+  const nextDeck = Array.isArray(state.deck) ? state.deck.slice() : [];
+  if(!nextDeck.length) return;
+
+  if(cardName){
+    const removeIndex = nextDeck.lastIndexOf(cardName);
+    if(removeIndex !== -1){
+      nextDeck.splice(removeIndex, 1);
+    } else {
+      nextDeck.pop();
+    }
+  } else {
+    nextDeck.pop();
+  }
+
+  state.deck = nextDeck;
+  renderHands();
+}
+
 async function runStartAnimation(animData){
   if(!animData || !animData.id) return;
   if(runningStartAnimationId === animData.id) return;
@@ -1656,10 +1677,10 @@ async function runStartAnimation(animData){
     for(let i = 0; i < deals; i++){
       const dealtName = drawnCards[i] || null;
       const remaining = Math.max(initialDeckCount - (i + 1), 0);
+      setDeckBadgeCount(remaining);
       const fly = await animateDealCardToPlayer(startPlayerId);
       applyLocalDealPreview(startPlayerId, dealtName);
       await wait(40);
-      setDeckBadgeCount(remaining);
       await wait(70);
       if(fly) fly.remove();
     }
