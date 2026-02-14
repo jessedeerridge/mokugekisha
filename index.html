@@ -770,15 +770,17 @@ function subscribeTransferAnimation(){
       const transferTarget = data.transferTarget || 'player';
 
       if(!isDraggingPlayer && data.fromPlayerId && transferTarget === 'player' && data.toPlayerId){
+        applyLocalTransferSourcePreview(data.fromPlayerId, data.transferCardName);
         const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
         if(transferFly) transferFly.remove();
-        applyLocalTransferPreview(data.fromPlayerId, data.toPlayerId, data.transferCardName);
+        applyLocalTransferDestinationPreview(data.toPlayerId, data.transferCardName);
       }
 
       if(!isDraggingPlayer && data.fromPlayerId && transferTarget === 'deck'){
+        applyLocalTransferSourcePreview(data.fromPlayerId, data.transferCardName);
         const transferFly = await animateTransferCardToDeck(data.fromPlayerId);
         if(transferFly) transferFly.remove();
-        applyLocalDeckTransferPreview(data.fromPlayerId, data.transferCardName);
+        applyLocalDeckTransferPreview(data.transferCardName);
       }
 
       if(data.hasDrawCard && data.toPlayerId){
@@ -1562,34 +1564,7 @@ async function waitForAnimationLayout(startPlayerId){
   return false;
 }
 
-function applyLocalTransferPreview(fromPlayerId, toPlayerId, cardName){
-  if(!fromPlayerId || !toPlayerId || !cardName) return;
-
-  const nextHands = { ...state.hands };
-  const fromBase = nextHands[fromPlayerId] && Array.isArray(nextHands[fromPlayerId].cards)
-    ? nextHands[fromPlayerId].cards.slice()
-    : [];
-  const toBase = nextHands[toPlayerId] && Array.isArray(nextHands[toPlayerId].cards)
-    ? nextHands[toPlayerId].cards.slice()
-    : [];
-
-  const removeIndex = fromBase.lastIndexOf(cardName);
-  const removedFromSender = removeIndex !== -1;
-  if(removedFromSender){
-    fromBase.splice(removeIndex, 1);
-  }
-
-  if(removedFromSender || !toBase.includes(cardName)){
-    toBase.push(cardName);
-  }
-
-  nextHands[fromPlayerId] = { cards: fromBase };
-  nextHands[toPlayerId] = { cards: toBase };
-  state.hands = nextHands;
-  renderHands();
-}
-
-function applyLocalDeckTransferPreview(fromPlayerId, cardName){
+function applyLocalTransferSourcePreview(fromPlayerId, cardName){
   if(!fromPlayerId || !cardName) return;
 
   const nextHands = { ...state.hands };
@@ -1604,6 +1579,29 @@ function applyLocalDeckTransferPreview(fromPlayerId, cardName){
 
   nextHands[fromPlayerId] = { cards: fromBase };
   state.hands = nextHands;
+  renderHands();
+}
+
+function applyLocalTransferDestinationPreview(toPlayerId, cardName){
+  if(!toPlayerId || !cardName) return;
+
+  const nextHands = { ...state.hands };
+  const toBase = nextHands[toPlayerId] && Array.isArray(nextHands[toPlayerId].cards)
+    ? nextHands[toPlayerId].cards.slice()
+    : [];
+
+  if(!toBase.includes(cardName)){
+    toBase.push(cardName);
+  }
+
+  nextHands[toPlayerId] = { cards: toBase };
+  state.hands = nextHands;
+  renderHands();
+}
+
+function applyLocalDeckTransferPreview(cardName){
+  if(!cardName) return;
+
   state.deck = Array.isArray(state.deck) ? [...state.deck, cardName] : [cardName];
   renderHands();
 }
