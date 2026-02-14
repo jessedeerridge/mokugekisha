@@ -118,11 +118,14 @@
     --durIn:220ms;
     --pause:20ms;
     --zone-circle-size:96px;
+    --mini-zone-scale:0.9;
   }
   .shuffle-deck{
     position:relative;
     width:54px;
     height:81px;
+    transform:scale(var(--mini-zone-scale));
+    transform-origin:center;
   }
   .shuffle-card{
     position:absolute;
@@ -196,7 +199,8 @@
   /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
   .player-tag .mini-hand{
     position:absolute;left:50%;top:100%;
-    transform:translate(-50%,6px);
+    transform:translate(-50%,6px) scale(var(--mini-zone-scale));
+    transform-origin:top center;
     width:var(--zone-circle-size);
     height:var(--zone-circle-size);
     pointer-events:none;
