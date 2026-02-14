@@ -767,10 +767,18 @@ function subscribeTransferAnimation(){
 
     (async () => {
       const isDraggingPlayer = data.fromPlayerId && state.userId && data.fromPlayerId === state.userId;
-      if(data.fromPlayerId && data.toPlayerId && !isDraggingPlayer){
+      const transferTarget = data.transferTarget || 'player';
+
+      if(!isDraggingPlayer && data.fromPlayerId && transferTarget === 'player' && data.toPlayerId){
         const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
         if(transferFly) transferFly.remove();
         applyLocalTransferPreview(data.fromPlayerId, data.toPlayerId, data.transferCardName);
+      }
+
+      if(!isDraggingPlayer && data.fromPlayerId && transferTarget === 'deck'){
+        const transferFly = await animateTransferCardToDeck(data.fromPlayerId);
+        if(transferFly) transferFly.remove();
+        applyLocalDeckTransferPreview(data.fromPlayerId, data.transferCardName);
       }
 
       if(data.hasDrawCard && data.toPlayerId){
@@ -1357,6 +1365,40 @@ async function animateTransferCardBetweenPlayers(fromPlayerId, toPlayerId){
   return fly;
 }
 
+async function animateTransferCardToDeck(fromPlayerId){
+  const from = getDealTargetPoint(fromPlayerId);
+  const to = getDeckCenterPoint();
+  if(!from || !to) return;
+
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+  const img = document.createElement('img');
+  img.alt = '山札へ移動カード';
+  img.src = BACK_IMG;
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  fly.style.opacity = '1';
+  document.body.appendChild(fly);
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(-6deg) scale(1)', opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx * 0.56}px, ${dy * 0.56 - 12}px) rotate(3deg) scale(1.02)`, opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(8deg) scale(0.98)`, opacity: 0.98 }
+  ], {
+    duration: 360,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
+  return fly;
+}
+
 function getNextPlayerId(){
   const n = latestPlayers.length;
   if(n < 2) return null;
@@ -1413,6 +1455,7 @@ async function transferCardToNextPlayer(cardIndex){
       [`rooms/${state.roomCode}/transferAnimation`]: {
         id: transferAnimId,
         actorId: state.userId,
+        transferTarget: 'player',
         fromPlayerId: state.userId,
         toPlayerId: nextPlayerId,
         transferCardName: movingCard,
@@ -1468,6 +1511,22 @@ async function transferCardToDeck(cardIndex){
   try {
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const nextDeck = Array.isArray(state.deck) ? [...state.deck, movingCard] : [movingCard];
+
+    const transferAnimId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/transferAnimation`]: {
+        id: transferAnimId,
+        actorId: state.userId,
+        transferTarget: 'deck',
+        fromPlayerId: state.userId,
+        transferCardName: movingCard,
+        hasDrawCard: false,
+        showToOthers: true,
+        createdAt: Date.now()
+      }
+    });
+
+    await wait(360);
 
     state.hands = {
       ...state.hands,
@@ -1527,6 +1586,25 @@ function applyLocalTransferPreview(fromPlayerId, toPlayerId, cardName){
   nextHands[fromPlayerId] = { cards: fromBase };
   nextHands[toPlayerId] = { cards: toBase };
   state.hands = nextHands;
+  renderHands();
+}
+
+function applyLocalDeckTransferPreview(fromPlayerId, cardName){
+  if(!fromPlayerId || !cardName) return;
+
+  const nextHands = { ...state.hands };
+  const fromBase = nextHands[fromPlayerId] && Array.isArray(nextHands[fromPlayerId].cards)
+    ? nextHands[fromPlayerId].cards.slice()
+    : [];
+
+  const removeIndex = fromBase.lastIndexOf(cardName);
+  if(removeIndex !== -1){
+    fromBase.splice(removeIndex, 1);
+  }
+
+  nextHands[fromPlayerId] = { cards: fromBase };
+  state.hands = nextHands;
+  state.deck = Array.isArray(state.deck) ? [...state.deck, cardName] : [cardName];
   renderHands();
 }
 
