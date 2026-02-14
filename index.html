@@ -191,6 +191,15 @@
     display:block;
     transform:scale(1.05);
   }
+  .deal-fly-card.deck-size{
+    width:calc(54px * var(--mini-zone-scale));
+    height:calc(81px * var(--mini-zone-scale));
+    border-radius:calc(10px * var(--mini-zone-scale));
+    border-width:calc(3px * var(--mini-zone-scale));
+  }
+  .deal-fly-card.deck-size img{
+    transform:none;
+  }
   .count-badge{
     position:absolute;right:4px;top:4px;
     min-width:18px;height:18px;
@@ -607,6 +616,12 @@ const TRANSFER_TO_DECK_SYNC_DELAY_MS = speedAdjustedMs(360);
 const DEAL_FLY_DURATION_MS = speedAdjustedMs(420);
 const TRANSFER_FLY_DURATION_MS = speedAdjustedMs(360);
 const EXILE_SLIDE_DURATION_MS = speedAdjustedMs(360);
+const KILLER_PEEK_DURATION_MS = speedAdjustedMs(320);
+const KILLER_RETURN_DURATION_MS = speedAdjustedMs(260);
+const KILLER_PEEK_OFFSET_X = -52;
+const KILLER_PEEK_OFFSET_Y = -8;
+const KILLER_PEEK_ROTATE_DEG = -4;
+const KILLER_PEEK_HOLD_MS = speedAdjustedMs(220);
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -1450,6 +1465,7 @@ async function animateExileCardFromDeck(cardName){
 
   const fly = document.createElement('div');
   fly.className = 'deal-fly-card';
+  fly.classList.add('deck-size');
   const img = document.createElement('img');
   img.alt = `除外カード:${cardName}`;
   img.src = BACK_IMG;
@@ -1474,6 +1490,54 @@ async function animateExileCardFromDeck(cardName){
 
   await anim.finished.catch(() => {});
   appendDeckExileCard(cardName);
+  fly.remove();
+}
+
+async function animateKillerPeekFromDeck(){
+  const from = getDeckCenterPoint();
+  if(!from) return null;
+
+  const fly = document.createElement('div');
+  fly.className = 'deal-fly-card';
+  fly.classList.add('deck-size');
+  const img = document.createElement('img');
+  img.alt = '殺人鬼カード';
+  img.src = cardImg('殺人鬼');
+  fly.appendChild(img);
+
+  fly.style.left = `${from.x}px`;
+  fly.style.top = `${from.y}px`;
+  fly.style.transform = 'translate(-50%, -50%)';
+  fly.style.opacity = '1';
+  fly.style.zIndex = '650';
+  document.body.appendChild(fly);
+
+  const anim = fly.animate([
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 },
+    { transform: `translate(-50%, -50%) translate(${KILLER_PEEK_OFFSET_X}px, ${KILLER_PEEK_OFFSET_Y}px) rotate(${KILLER_PEEK_ROTATE_DEG}deg) scale(1)`, opacity: 1 }
+  ], {
+    duration: KILLER_PEEK_DURATION_MS,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
+  return fly;
+}
+
+async function animateKillerReturnToDeck(fly){
+  if(!fly) return;
+
+  const anim = fly.animate([
+    { transform: `translate(-50%, -50%) translate(${KILLER_PEEK_OFFSET_X}px, ${KILLER_PEEK_OFFSET_Y}px) rotate(${KILLER_PEEK_ROTATE_DEG}deg) scale(1)`, opacity: 1 },
+    { transform: 'translate(-50%, -50%) translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1 }
+  ], {
+    duration: KILLER_RETURN_DURATION_MS,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'forwards'
+  });
+
+  await anim.finished.catch(() => {});
   fly.remove();
 }
 
@@ -1801,12 +1865,21 @@ async function runStartAnimation(animData){
     clearDeckExileCards();
     setDeckBadgeCount(initialDeckCount);
 
+    const hasExileAnimation = excludedCards.some(name => !!name);
+    const killerPreview = hasExileAnimation ? await animateKillerPeekFromDeck() : null;
+    if(killerPreview) await wait(KILLER_PEEK_HOLD_MS);
+
     for(let i = 0; i < excludedCards.length; i++){
       const excludedName = excludedCards[i] || null;
       if(!excludedName) continue;
       setDeckBadgeCount(Math.max(initialDeckCount - (i + 1), 0));
       await animateExileCardFromDeck(excludedName);
       await wait(70);
+    }
+
+    if(killerPreview){
+      await animateKillerReturnToDeck(killerPreview);
+      await wait(60);
     }
 
     const deckCountAfterExclusion = Math.max(initialDeckCount - excludedCards.length, 0);
