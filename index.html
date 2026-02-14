@@ -87,7 +87,7 @@
      ★ 山札（プレイヤーサークル中心）
      ========================= */
   .deck-wrap{
-    position:absolute;left:50%;top:70%;
+    position:absolute;left:calc(50% - var(--deck-offset-x));top:70%;
     transform:translate(-50%,-50%);
     z-index:10;
     display:flex;align-items:center;justify-content:center;
@@ -118,11 +118,15 @@
     --durIn:220ms;
     --pause:20ms;
     --zone-circle-size:96px;
+    --mini-zone-scale:0.9;
+    --deck-offset-x:18px;
   }
   .shuffle-deck{
     position:relative;
     width:54px;
     height:81px;
+    transform:scale(var(--mini-zone-scale));
+    transform-origin:center;
   }
   .shuffle-card{
     position:absolute;
@@ -196,7 +200,8 @@
   /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
   .player-tag .mini-hand{
     position:absolute;left:50%;top:100%;
-    transform:translate(-50%,6px);
+    transform:translate(-50%,6px) scale(var(--mini-zone-scale));
+    transform-origin:top center;
     width:var(--zone-circle-size);
     height:var(--zone-circle-size);
     pointer-events:none;
@@ -492,6 +497,7 @@ const CARDS = [
   "富豪",
   "探偵",
 ];
+const SPECIAL_DECK_OFFSET_CARD = '執事';
 
 // ▼ 状態
 const state = {
@@ -590,6 +596,10 @@ function defaultDeckConfig(){
   const o = {};
   CARDS.forEach(n => o[n] = true); // 初期は全部濃い（投入）
   return o;
+}
+function updateDeckOffsetByConfig(){
+  const hasSpecialCard = (state.deckConfig[SPECIAL_DECK_OFFSET_CARD] !== false);
+  document.documentElement.style.setProperty('--deck-offset-x', hasSpecialCard ? '45px' : '0px');
 }
 
 // ========= ヘルプ（カード一覧） =========
@@ -712,6 +722,8 @@ function subscribeDeckConfig(){
     if(!data && state.isHost){
       await set(cfgRef, defaultDeckConfig());
     }
+
+    updateDeckOffsetByConfig();
 
     // ヘルプ表示中なら即反映
     if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
