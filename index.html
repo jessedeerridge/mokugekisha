@@ -82,6 +82,14 @@
   .player-tag .mini-hand.next-turn-target.drop-ready::before{
     background:rgba(37,99,235,.14);
   }
+  .deck-wrap.next-turn-target::before{
+    border-color:#2563eb;
+    border-style:solid;
+    border-width:3px;
+  }
+  .deck-wrap.next-turn-target.drop-ready::before{
+    background:rgba(37,99,235,.14);
+  }
 
   /* =========================
      ★ 山札（プレイヤーサークル中心）
@@ -789,8 +797,8 @@ function cleanupPointerDragState(options = {}){
   activePointerDrag = null;
 }
 
-function findNextTurnDropTarget(){
-  return document.querySelector('.mini-hand.next-turn-target');
+function findTurnDropTarget(){
+  return document.querySelector('[data-drop-target="active"]');
 }
 
 function setPointerGhostPosition(clientX, clientY){
@@ -801,7 +809,7 @@ function setPointerGhostPosition(clientX, clientY){
 
 function updateDropReadyState(clientX, clientY){
   if(!activePointerDrag) return;
-  const target = findNextTurnDropTarget();
+  const target = findTurnDropTarget();
   if(!target){
     if(activePointerDrag.dropTargetEl){
       activePointerDrag.dropTargetEl.classList.remove('drop-ready');
@@ -829,7 +837,10 @@ async function finishPointerDrag(clientX, clientY){
   const shouldDrop = !!dropTargetEl;
   cleanupPointerDragState({ keepSourceHidden: shouldDrop });
   if(!shouldDrop) return;
-  const transferred = await transferCardToNextPlayer(draggedIndex);
+  const transferType = dropTargetEl.dataset.transferTarget;
+  const transferred = (transferType === 'deck')
+    ? await transferCardToDeck(draggedIndex)
+    : await transferCardToNextPlayer(draggedIndex);
   if(!transferred && cardEl){
     cardEl.classList.remove('pointer-dragging-source');
   }
@@ -837,7 +848,7 @@ async function finishPointerDrag(clientX, clientY){
 
 function startPointerCardDrag(cardEl, cardIndex, ev){
   if(ev.button !== 0 || isTransferringCard) return;
-  const target = findNextTurnDropTarget();
+  const target = findTurnDropTarget();
   if(!target) return;
 
   ev.preventDefault();
@@ -899,7 +910,7 @@ function renderMyHand(){
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
 
-  const canTransfer = handData.cards.length === 2 && !!getNextPlayerId();
+  const canTransfer = handData.cards.length === 2 && !!getTurnTransferTarget();
 
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
@@ -1138,6 +1149,13 @@ function renderCenterDeck(){
   wrap.className = 'deck-wrap';
   wrap.dataset.role = 'deck';
 
+  const turnTarget = getTurnTransferTarget();
+  if(turnTarget === 'deck'){
+    wrap.classList.add('next-turn-target');
+    wrap.dataset.dropTarget = 'active';
+    wrap.dataset.transferTarget = 'deck';
+  }
+
   const shuffleDeck = document.createElement('div');
   shuffleDeck.className = 'shuffle-deck';
 
@@ -1171,6 +1189,28 @@ function renderCenterDeck(){
   frontCard.appendChild(badge);
 
   wrap.appendChild(shuffleDeck);
+
+  if(turnTarget === 'deck'){
+    wrap.addEventListener('dragover', (e) => {
+      const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+        ? state.hands[state.userId].cards
+        : [];
+      if(myHand.length !== 2) return;
+      e.preventDefault();
+      wrap.classList.add('drop-ready');
+    });
+    wrap.addEventListener('dragleave', () => {
+      wrap.classList.remove('drop-ready');
+    });
+    wrap.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      wrap.classList.remove('drop-ready');
+      const idx = Number(e.dataTransfer.getData('text/plain'));
+      if(Number.isNaN(idx)) return;
+      await transferCardToDeck(idx);
+    });
+  }
+
   playerCircle.appendChild(wrap);
 }
 
@@ -1323,8 +1363,17 @@ function getNextPlayerId(){
   return next ? next.id : null;
 }
 
+function getTurnTransferTarget(){
+  const nextPlayerId = getNextPlayerId();
+  if(!nextPlayerId || nextPlayerId === state.userId) return null;
+  const startPlayerId = state.room && state.room.startPlayerId;
+  if(startPlayerId && nextPlayerId === startPlayerId) return 'deck';
+  return 'player';
+}
+
 async function transferCardToNextPlayer(cardIndex){
   if(isTransferringCard || !state.roomCode) return false;
+  if(getTurnTransferTarget() !== 'player') return false;
   const nextPlayerId = getNextPlayerId();
   if(!nextPlayerId || nextPlayerId === state.userId) return false;
 
@@ -1389,6 +1438,50 @@ async function transferCardToNextPlayer(cardIndex){
     return true;
   } catch (err) {
     state.hands = prevHands;
+    renderHands();
+    throw err;
+  } finally {
+    isTransferringCard = false;
+    cleanupPointerDragState();
+  }
+}
+
+async function transferCardToDeck(cardIndex){
+  if(isTransferringCard || !state.roomCode) return false;
+  if(getTurnTransferTarget() !== 'deck') return false;
+
+  const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+    ? state.hands[state.userId].cards.slice()
+    : [];
+  if(myHand.length !== 2) return false;
+
+  const movingCard = myHand[cardIndex];
+  if(!movingCard) return false;
+
+  isTransferringCard = true;
+  const prevHands = state.hands;
+  const prevDeck = state.deck;
+
+  try {
+    const myFinal = myHand.filter((_, i) => i !== cardIndex);
+    const nextDeck = Array.isArray(state.deck) ? [...state.deck, movingCard] : [movingCard];
+
+    state.hands = {
+      ...state.hands,
+      [state.userId]: { cards: myFinal }
+    };
+    state.deck = nextDeck;
+    renderHands();
+
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
+      [`rooms/${state.roomCode}/deck`]: nextDeck
+    });
+
+    return true;
+  } catch (err) {
+    state.hands = prevHands;
+    state.deck = prevDeck;
     renderHands();
     throw err;
   } finally {
@@ -1506,6 +1599,7 @@ function renderPlayerCircle(players){
     tag.style.top = `${y}%`;
 
     const nextPlayerId = getNextPlayerId();
+    const turnTarget = getTurnTransferTarget();
 
     tag.onclick = () => {
       if (p.id === state.userId) return;
@@ -1523,8 +1617,10 @@ function renderPlayerCircle(players){
       const miniHand = document.createElement('div');
       miniHand.className = 'mini-hand';
 
-      if(p.id === nextPlayerId){
+      if(turnTarget === 'player' && p.id === nextPlayerId){
         miniHand.classList.add('next-turn-target');
+        miniHand.dataset.dropTarget = 'active';
+        miniHand.dataset.transferTarget = 'player';
         miniHand.addEventListener('dragover', (e) => {
           const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
             ? state.hands[state.userId].cards
