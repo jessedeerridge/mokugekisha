@@ -547,7 +547,8 @@ const state = {
   room: {},
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
   deck: [],       // ★ 山札（残り）配列
-  startAnimation: null
+  startAnimation: null,
+  startExcludedCards: []
 };
 
 // DOM
@@ -1207,6 +1208,20 @@ function renderCenterDeck(){
   const exileTray = document.createElement('div');
   exileTray.className = 'deck-exile-tray';
   exileTray.dataset.role = 'deck-exile-tray';
+
+  const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
+  excludedCards.forEach((name) => {
+    const card = document.createElement('div');
+    card.className = 'deck-exile-card';
+    const img = document.createElement('img');
+    img.alt = `除外カード:${name}`;
+    img.src = cardImg(name);
+    img.loading = 'lazy';
+    card.appendChild(img);
+    exileTray.appendChild(card);
+  });
+  if(excludedCards.length) exileTray.classList.add('visible');
+
   wrap.appendChild(exileTray);
 
   const turnTarget = getTurnTransferTarget();
@@ -1389,6 +1404,7 @@ async function animateDealCardToPlayer(playerId){
 
 
 function clearDeckExileCards(){
+  state.startExcludedCards = [];
   const deckWrap = playerCircle.querySelector('[data-role="deck"]');
   if(!deckWrap) return;
   const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
@@ -1399,6 +1415,9 @@ function clearDeckExileCards(){
 
 function appendDeckExileCard(cardName){
   if(!cardName) return;
+  state.startExcludedCards = Array.isArray(state.startExcludedCards)
+    ? [...state.startExcludedCards, cardName]
+    : [cardName];
   const deckWrap = playerCircle.querySelector('[data-role="deck"]');
   if(!deckWrap) return;
   const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
@@ -1773,6 +1792,7 @@ async function runStartAnimation(animData){
   const startPlayerId = animData.startPlayerId;
   const drawnCards = Array.isArray(animData.drawnCards) ? animData.drawnCards : [];
   const excludedCards = Array.isArray(animData.excludedCards) ? animData.excludedCards : [];
+  state.startExcludedCards = [];
 
   try {
     const ready = await waitForAnimationLayout(startPlayerId);
@@ -1978,6 +1998,7 @@ async function dealInitialHands(){
   resetPatch[`${base}/startAnimation`] = null;
   await update(ref(db), resetPatch);
   state.hands = {};
+  state.startExcludedCards = [];
   renderHands();
   await wait(80);
 
