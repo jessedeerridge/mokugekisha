@@ -87,7 +87,7 @@
      ★ 山札（プレイヤーサークル中心）
      ========================= */
   .deck-wrap{
-    position:absolute;left:50%;top:70%;
+    position:absolute;left:calc(50% - var(--deck-offset-x));top:70%;
     transform:translate(-50%,-50%);
     z-index:10;
     display:flex;align-items:center;justify-content:center;
@@ -119,6 +119,7 @@
     --pause:20ms;
     --zone-circle-size:96px;
     --mini-zone-scale:0.9;
+    --deck-offset-x:18px;
   }
   .shuffle-deck{
     position:relative;
