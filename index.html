@@ -497,6 +497,7 @@ const CARDS = [
   "富豪",
   "探偵",
 ];
+const SPECIAL_DECK_OFFSET_CARD = '執事';
 
 // ▼ 状態
 const state = {
@@ -595,6 +596,10 @@ function defaultDeckConfig(){
   const o = {};
   CARDS.forEach(n => o[n] = true); // 初期は全部濃い（投入）
   return o;
+}
+function updateDeckOffsetByConfig(){
+  const hasSpecialCard = (state.deckConfig[SPECIAL_DECK_OFFSET_CARD] !== false);
+  document.documentElement.style.setProperty('--deck-offset-x', hasSpecialCard ? '45px' : '0px');
 }
 
 // ========= ヘルプ（カード一覧） =========
@@ -717,6 +722,8 @@ function subscribeDeckConfig(){
     if(!data && state.isHost){
       await set(cfgRef, defaultDeckConfig());
     }
+
+    updateDeckOffsetByConfig();
 
     // ヘルプ表示中なら即反映
     if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
