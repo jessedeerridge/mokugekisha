@@ -750,6 +750,7 @@ function subscribeTransferAnimation(){
       if(data.fromPlayerId && data.toPlayerId && !isDraggingPlayer){
         const transferFly = await animateTransferCardBetweenPlayers(data.fromPlayerId, data.toPlayerId);
         if(transferFly) transferFly.remove();
+        applyLocalTransferPreview(data.fromPlayerId, data.toPlayerId, data.transferCardName);
       }
 
       if(data.hasDrawCard && data.toPlayerId){
@@ -763,10 +764,11 @@ function subscribeTransferAnimation(){
 
 
 // ========= 手札描画（画像表示） =========
-function cleanupPointerDragState(){
+function cleanupPointerDragState(options = {}){
   if(!activePointerDrag) return;
+  const { keepSourceHidden = false } = options;
   const { cardEl, ghostEl, dropTargetEl, pointerId } = activePointerDrag;
-  if(cardEl) cardEl.classList.remove('pointer-dragging-source');
+  if(cardEl && !keepSourceHidden) cardEl.classList.remove('pointer-dragging-source');
   if(ghostEl) ghostEl.remove();
   if(dropTargetEl) dropTargetEl.classList.remove('drop-ready');
   if(cardEl && pointerId != null){
@@ -811,11 +813,14 @@ function updateDropReadyState(clientX, clientY){
 
 async function finishPointerDrag(clientX, clientY){
   if(!activePointerDrag) return;
-  const draggedIndex = activePointerDrag.cardIndex;
-  const shouldDrop = !!activePointerDrag.dropTargetEl;
-  cleanupPointerDragState();
+  const { cardIndex: draggedIndex, dropTargetEl, cardEl } = activePointerDrag;
+  const shouldDrop = !!dropTargetEl;
+  cleanupPointerDragState({ keepSourceHidden: shouldDrop });
   if(!shouldDrop) return;
-  await transferCardToNextPlayer(draggedIndex);
+  const transferred = await transferCardToNextPlayer(draggedIndex);
+  if(!transferred && cardEl){
+    cardEl.classList.remove('pointer-dragging-source');
+  }
 }
 
 function startPointerCardDrag(cardEl, cardIndex, ev){
@@ -1307,17 +1312,17 @@ function getNextPlayerId(){
 }
 
 async function transferCardToNextPlayer(cardIndex){
-  if(isTransferringCard || !state.roomCode) return;
+  if(isTransferringCard || !state.roomCode) return false;
   const nextPlayerId = getNextPlayerId();
-  if(!nextPlayerId || nextPlayerId === state.userId) return;
+  if(!nextPlayerId || nextPlayerId === state.userId) return false;
 
   const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
     ? state.hands[state.userId].cards.slice()
     : [];
-  if(myHand.length !== 2) return;
+  if(myHand.length !== 2) return false;
 
   const movingCard = myHand[cardIndex];
-  if(!movingCard) return;
+  if(!movingCard) return false;
 
   isTransferringCard = true;
   const prevHands = state.hands;
@@ -1346,6 +1351,7 @@ async function transferCardToNextPlayer(cardIndex){
         actorId: state.userId,
         fromPlayerId: state.userId,
         toPlayerId: nextPlayerId,
+        transferCardName: movingCard,
         hasDrawCard: !!drawCard,
         showToOthers: true,
         createdAt: Date.now()
@@ -1359,7 +1365,7 @@ async function transferCardToNextPlayer(cardIndex){
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: afterTransfer
     });
 
-    if(!drawCard) return;
+    if(!drawCard) return true;
 
     await wait(TRANSFER_TO_DRAW_DELAY_MS);
 
@@ -1367,6 +1373,8 @@ async function transferCardToNextPlayer(cardIndex){
       [`rooms/${state.roomCode}/hands/${nextPlayerId}/cards`]: [drawCard, ...afterTransfer],
       [`rooms/${state.roomCode}/deck`]: deck.slice(0, -1)
     });
+
+    return true;
   } catch (err) {
     state.hands = prevHands;
     renderHands();
@@ -1385,6 +1393,33 @@ async function waitForAnimationLayout(startPlayerId){
     await wait(100);
   }
   return false;
+}
+
+function applyLocalTransferPreview(fromPlayerId, toPlayerId, cardName){
+  if(!fromPlayerId || !toPlayerId || !cardName) return;
+
+  const nextHands = { ...state.hands };
+  const fromBase = nextHands[fromPlayerId] && Array.isArray(nextHands[fromPlayerId].cards)
+    ? nextHands[fromPlayerId].cards.slice()
+    : [];
+  const toBase = nextHands[toPlayerId] && Array.isArray(nextHands[toPlayerId].cards)
+    ? nextHands[toPlayerId].cards.slice()
+    : [];
+
+  const removeIndex = fromBase.lastIndexOf(cardName);
+  const removedFromSender = removeIndex !== -1;
+  if(removedFromSender){
+    fromBase.splice(removeIndex, 1);
+  }
+
+  if(removedFromSender || !toBase.includes(cardName)){
+    toBase.push(cardName);
+  }
+
+  nextHands[fromPlayerId] = { cards: fromBase };
+  nextHands[toPlayerId] = { cards: toBase };
+  state.hands = nextHands;
+  renderHands();
 }
 
 function applyLocalDealPreview(playerId, cardName){
