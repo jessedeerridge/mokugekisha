@@ -218,8 +218,8 @@
     opacity:1;
   }
   .deck-exile-card{
-    width:54px;
-    height:81px;
+    width:calc(54px * var(--mini-zone-scale));
+    height:calc(81px * var(--mini-zone-scale));
     border-radius:10px;
     border:3px solid #fff;
     box-shadow:0 0 0 1px #000, 0 4px 12px rgba(0,0,0,.2);
@@ -1215,7 +1215,7 @@ function renderCenterDeck(){
     card.className = 'deck-exile-card';
     const img = document.createElement('img');
     img.alt = `除外カード:${name}`;
-    img.src = cardImg(name);
+    img.src = BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
     exileTray.appendChild(card);
@@ -1428,7 +1428,7 @@ function appendDeckExileCard(cardName){
 
   const img = document.createElement('img');
   img.alt = `除外カード:${cardName}`;
-  img.src = cardImg(cardName);
+  img.src = BACK_IMG;
   img.loading = 'lazy';
 
   card.appendChild(img);
@@ -1452,7 +1452,7 @@ async function animateExileCardFromDeck(cardName){
   fly.className = 'deal-fly-card';
   const img = document.createElement('img');
   img.alt = `除外カード:${cardName}`;
-  img.src = cardImg(cardName);
+  img.src = BACK_IMG;
   fly.appendChild(img);
 
   fly.style.left = `${from.x}px`;
