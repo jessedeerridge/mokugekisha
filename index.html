@@ -133,6 +133,8 @@
     position:relative;
     width:54px;
     height:81px;
+    --stack-offset-x:var(--offsetX);
+    --stack-offset-y:var(--offsetY);
     transform:scale(var(--mini-zone-scale));
     transform-origin:center;
   }
@@ -157,7 +159,7 @@
     transform-origin:center;
   }
   .shuffle-card.back{
-    transform: translate(var(--offsetX), var(--offsetY)) rotate(0deg);
+    transform: translate(var(--stack-offset-x), var(--stack-offset-y)) rotate(0deg);
     z-index:1;
   }
   .shuffle-card.front{
@@ -170,7 +172,7 @@
   }
   .shuffle-card.movingIn{
     transition: transform var(--durIn) ease-in-out;
-    transform: translate(var(--offsetX), var(--offsetY)) rotate(var(--tiltBase));
+    transform: translate(var(--stack-offset-x), var(--stack-offset-y)) rotate(var(--tiltBase));
   }
 
   .deal-fly-card{
@@ -1444,6 +1446,9 @@ function renderCenterDeck(){
   if(deckCount > 0){
     const shuffleDeck = document.createElement('div');
     shuffleDeck.className = 'shuffle-deck';
+    const stackOffset = Math.min(14, 2 + Math.floor((deckCount - 1) / 3));
+    shuffleDeck.style.setProperty('--stack-offset-x', `${stackOffset}px`);
+    shuffleDeck.style.setProperty('--stack-offset-y', `${stackOffset}px`);
 
     for(let i = 0; i < deckCount; i++){
       const card = document.createElement('div');
