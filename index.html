@@ -828,6 +828,10 @@ function renderHelpGrid(){
     btn.disabled = !state.isHost;
     btn.addEventListener('click', async () => {
       if(!state.isHost || !state.roomCode) return;
+
+      timerBtns.querySelectorAll('.help-timer-btn').forEach((el) => el.classList.remove('active'));
+      btn.classList.add('active');
+
       await update(ref(db), {
         [`rooms/${state.roomCode}/discussionDurationSec`]: sec
       });
@@ -949,6 +953,7 @@ function subscribeRoom(){
     hostSelectingPop.classList.toggle('hidden', !waiting);
     syncDiscussionPhase(state.room.discussionPhase || null);
     syncSeatUI();
+    if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
   });
 }
 function subscribeHostState(){
