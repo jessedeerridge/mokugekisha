@@ -398,21 +398,47 @@
     grid-template-columns: repeat(4, 1fr);
     gap:10px;
   }
+  .help-grid .card{
+    width:100%;
+    max-width:84px;
+    height:auto;
+    aspect-ratio:2 / 3;
+  }
   .help-item{
     display:flex;
     flex-direction:column;
     align-items:center;
-    gap:6px;
+    justify-content:center;
     cursor:default;
   }
   .help-item.host-clickable{cursor:pointer;}
   .help-item.disabled{opacity:.25;}
-  .help-name{
-    font-size:12px;
+  .help-timer-item{
+    border:1px solid #ddd;
+    border-radius:12px;
+    padding:8px 6px;
+    background:#fafafa;
+    min-height:126px;
+    width:100%;
+    box-sizing:border-box;
+    gap:6px;
+  }
+  .help-timer-btns{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:6px;
+    width:100%;
+  }
+  .help-timer-btn{
+    width:100%;
     font-weight:700;
-    text-align:center;
-    line-height:1.15;
-    white-space:nowrap;
+    font-size:12px;
+    padding:6px 0;
+  }
+  .help-timer-btn.active{
+    background:#111;
+    color:#fff;
+    border-color:#111;
   }
 
   .announce-pop{
@@ -691,7 +717,8 @@ const TRANSFER_FLY_DURATION_MS = speedAdjustedMs(360);
 const EXILE_SLIDE_DURATION_MS = speedAdjustedMs(360);
 const KILLER_PEEK_DURATION_MS = speedAdjustedMs(320);
 const KILLER_RETURN_DURATION_MS = speedAdjustedMs(260);
-const DISCUSSION_DURATION_SEC = 4 * 60;
+const DEFAULT_DISCUSSION_DURATION_SEC = 4 * 60;
+const TIMER_PRESET_SECONDS = [2, 5 * 60, 6 * 60];
 const KILLER_PEEK_OFFSET_X = -52;
 const KILLER_PEEK_OFFSET_Y = -8;
 const KILLER_PEEK_ROTATE_DEG = -4;
@@ -738,6 +765,10 @@ function defaultDeckConfig(){
   CARDS.forEach(n => o[n] = true); // 初期は全部濃い（投入）
   return o;
 }
+function getDiscussionDurationSec(){
+  const sec = Number(state.room && state.room.discussionDurationSec);
+  return Number.isFinite(sec) && sec > 0 ? sec : DEFAULT_DISCUSSION_DURATION_SEC;
+}
 applyCardAnimationSpeed();
 function updateDeckOffsetByConfig(){
   const hasSpecialCard = (state.deckConfig[SPECIAL_DECK_OFFSET_CARD] !== false);
@@ -766,12 +797,7 @@ function renderHelpGrid(){
     img.loading = 'lazy';
     card.appendChild(img);
 
-    const cap = document.createElement('div');
-    cap.className = 'help-name';
-    cap.textContent = name;
-
     item.appendChild(card);
-    item.appendChild(cap);
 
     // ★ ホストだけクリックでON/OFF
     item.addEventListener('click', async () => {
@@ -785,6 +811,32 @@ function renderHelpGrid(){
 
     grid.appendChild(item);
   });
+
+  const timerItem = document.createElement('div');
+  timerItem.className = 'help-item help-timer-item';
+
+  const timerBtns = document.createElement('div');
+  timerBtns.className = 'help-timer-btns';
+  const currentTimerSec = getDiscussionDurationSec();
+
+  TIMER_PRESET_SECONDS.forEach((sec) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn help-timer-btn';
+    if(sec === currentTimerSec) btn.classList.add('active');
+    btn.textContent = formatTimerText(sec);
+    btn.disabled = !state.isHost;
+    btn.addEventListener('click', async () => {
+      if(!state.isHost || !state.roomCode) return;
+      await update(ref(db), {
+        [`rooms/${state.roomCode}/discussionDurationSec`]: sec
+      });
+    });
+    timerBtns.appendChild(btn);
+  });
+
+  timerItem.appendChild(timerBtns);
+  grid.appendChild(timerItem);
 
   helpBody.appendChild(grid);
 }
@@ -839,7 +891,7 @@ function clearDiscussionTimer(){
     discussionTimerInterval = null;
   }
   discussionTimer.classList.remove('visible');
-  discussionTimerInner.textContent = '04:00';
+  discussionTimerInner.textContent = formatTimerText(getDiscussionDurationSec());
 }
 
 function formatTimerText(totalSec){
@@ -849,9 +901,10 @@ function formatTimerText(totalSec){
   return `${String(min).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
 }
 
-function runDiscussionTimer(startedAtMs){
+function runDiscussionTimer(startedAtMs, durationSec){
   const startMs = Number(startedAtMs || Date.now());
-  const endMs = startMs + DISCUSSION_DURATION_SEC * 1000;
+  const useDurationSec = Number(durationSec) > 0 ? Number(durationSec) : getDiscussionDurationSec();
+  const endMs = startMs + useDurationSec * 1000;
 
   clearDiscussionTimer();
   discussionPhaseEnded = false;
@@ -884,7 +937,7 @@ function syncDiscussionPhase(data){
   if(lastDiscussionPhaseId === data.id) return;
   lastDiscussionPhaseId = data.id;
   showAnnouncePop('議論開始！');
-  runDiscussionTimer(data.startedAt);
+  runDiscussionTimer(data.startedAt, data.durationSec);
 }
 
 // ========= Firebase subscribe =========
@@ -1888,7 +1941,7 @@ async function transferCardToDeck(cardIndex){
       [`rooms/${state.roomCode}/discussionPhase`]: {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         startedAt: Date.now(),
-        durationSec: DISCUSSION_DURATION_SEC
+        durationSec: getDiscussionDurationSec()
       }
     });
 
