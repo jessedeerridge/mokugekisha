@@ -223,8 +223,29 @@
     display:flex;
     gap:12px;
     transform-origin:center;
+    align-items:flex-start;
   }
-  .vote-result-hand .card{
+  .vote-result-player{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+  }
+  .vote-result-player-name{
+    padding:4px 10px;
+    border-radius:999px;
+    background:rgba(17,17,17,.86);
+    color:#fff;
+    font-size:12px;
+    font-weight:700;
+    line-height:1;
+    white-space:nowrap;
+  }
+  .vote-result-player-cards{
+    display:flex;
+    gap:12px;
+  }
+  .vote-result-player-cards .card{
     width:120px;
     height:180px;
     border-radius:14px;
@@ -1019,20 +1040,26 @@ async function tryRevealVoteResult(){
   if(!areAllPlayersVoted()) return;
 
   const counts = getVoteCounts();
-  let maxPlayerId = null;
   let maxCount = -1;
+  const maxPlayerIds = [];
   latestPlayers.forEach((p) => {
     const n = Number(counts[p.id] || 0);
     if(n > maxCount){
       maxCount = n;
-      maxPlayerId = p.id;
+      maxPlayerIds.length = 0;
+      maxPlayerIds.push(p.id);
+      return;
+    }
+    if(n === maxCount){
+      maxPlayerIds.push(p.id);
     }
   });
 
   await update(ref(db), {
     [`rooms/${state.roomCode}/votePhase/status`]: 'revealed',
     [`rooms/${state.roomCode}/votePhase/finishedAt`]: Date.now(),
-    [`rooms/${state.roomCode}/votePhase/maxPlayerId`]: maxPlayerId,
+    [`rooms/${state.roomCode}/votePhase/maxPlayerIds`]: maxPlayerIds,
+    [`rooms/${state.roomCode}/votePhase/maxPlayerId`]: maxPlayerIds[0] || null,
     [`rooms/${state.roomCode}/votePhase/counts`]: counts
   });
 }
@@ -1040,27 +1067,57 @@ async function showVoteResultFocus(){
   if(!isVoteLocked()) return;
   if(lastRevealedVotePhaseId === state.votePhase.id) return;
 
-  const maxPlayerId = state.votePhase.maxPlayerId;
-  if(!maxPlayerId) return;
+  const winnerIds = Array.isArray(state.votePhase.maxPlayerIds) && state.votePhase.maxPlayerIds.length
+    ? state.votePhase.maxPlayerIds
+    : (state.votePhase.maxPlayerId ? [state.votePhase.maxPlayerId] : []);
+  if(!winnerIds.length) return;
 
-  const hand = state.hands[maxPlayerId] && Array.isArray(state.hands[maxPlayerId].cards)
-    ? state.hands[maxPlayerId].cards
-    : [];
-  if(!hand.length) return;
+  const playersById = {};
+  latestPlayers.forEach((p) => { playersById[p.id] = p; });
+  const focusPlayers = winnerIds
+    .map((id) => {
+      const hand = state.hands[id] && Array.isArray(state.hands[id].cards)
+        ? state.hands[id].cards
+        : [];
+      if(!hand.length) return null;
+      return {
+        id,
+        name: (playersById[id] && playersById[id].name) || '名無し',
+        hand
+      };
+    })
+    .filter(Boolean);
+  if(!focusPlayers.length) return;
 
   lastRevealedVotePhaseId = state.votePhase.id;
   voteResultHand.innerHTML = '';
-  hand.forEach((name) => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const img = document.createElement('img');
-    img.alt = name;
-    img.src = cardImg(name);
-    img.loading = 'lazy';
-    card.appendChild(img);
-    appendCardNameBadge(card, name);
-    appendCardDescription(card, name);
-    voteResultHand.appendChild(card);
+  focusPlayers.forEach(({ name: playerName, hand }) => {
+    const playerBlock = document.createElement('div');
+    playerBlock.className = 'vote-result-player';
+
+    const label = document.createElement('div');
+    label.className = 'vote-result-player-name';
+    label.textContent = playerName;
+    playerBlock.appendChild(label);
+
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = 'vote-result-player-cards';
+
+    hand.forEach((cardName) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const img = document.createElement('img');
+      img.alt = cardName;
+      img.src = cardImg(cardName);
+      img.loading = 'lazy';
+      card.appendChild(img);
+      appendCardNameBadge(card, cardName);
+      appendCardDescription(card, cardName);
+      cardsWrap.appendChild(card);
+    });
+
+    playerBlock.appendChild(cardsWrap);
+    voteResultHand.appendChild(playerBlock);
   });
 
   voteResultOverlay.classList.add('visible');
