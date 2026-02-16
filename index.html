@@ -1244,21 +1244,24 @@ function subscribeStartAnimation(){
   const animRef = ref(db, `rooms/${state.roomCode}/startAnimation`);
   onValue(animRef, snap => {
     const data = snap.val();
-    if(!data || !data.id || data.status !== 'run') return;
-    if(lastStartAnimationId === data.id) return;
 
-    const hasStartedRound = Object.values(state.hands || {}).some((hand) => {
-      return hand && Array.isArray(hand.cards) && hand.cards.length > 0;
-    });
-    if(hasStartedRound || (state.deck && state.deck.length > 0 && state.room && state.room.startPlayerId)){
-      lastStartAnimationId = data.id;
+    if(!subscribeStartAnimation.initialized){
+      subscribeStartAnimation.initialized = true;
+      if(data && data.id){
+        lastStartAnimationId = data.id;
+      }
       return;
     }
+
+    if(!data || !data.id || data.status !== 'run') return;
+    if(lastStartAnimationId === data.id) return;
 
     lastStartAnimationId = data.id;
     runStartAnimation(data);
   });
 }
+subscribeStartAnimation.initialized = false;
+
 function subscribeTransferAnimation(){
   const transferRef = ref(db, `rooms/${state.roomCode}/transferAnimation`);
   onValue(transferRef, snap => {
@@ -1524,6 +1527,7 @@ btnJoin.addEventListener('click', async () => {
   subscribeDeck(); // ★ 山札
   subscribeVotePhase();
   subscribeVotes();
+  subscribeStartAnimation.initialized = false;
   subscribeStartAnimation();
   subscribeTransferAnimation();
 
