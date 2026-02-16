@@ -345,6 +345,9 @@
   .deck-exile-tray.visible{
     opacity:1;
   }
+  .deck-exile-tray.butler-clickable{
+    pointer-events:auto;
+  }
   .deck-exile-card.butler-clickable{
     pointer-events:auto;
     cursor:pointer;
@@ -866,9 +869,18 @@ function getActiveDiscussionPhaseId(){
   if(!phase || !phase.id) return null;
   return phase.id;
 }
+function isDiscussionPhaseActiveNow(){
+  const phase = state.room && state.room.discussionPhase;
+  if(!phase || !phase.id) return false;
+  const startedAt = Number(phase.startedAt || 0);
+  const durationSec = Number(phase.durationSec || getDiscussionDurationSec());
+  if(!startedAt || !durationSec || durationSec <= 0) return false;
+  const endAt = startedAt + durationSec * 1000;
+  return Date.now() < endAt;
+}
 function canUseButlerEffect(){
   const discussionId = getActiveDiscussionPhaseId();
-  if(!discussionId || !discussionTimerInterval) return false;
+  if(!discussionId || !isDiscussionPhaseActiveNow()) return false;
   if(!hasCardInHand(state.userId, '執事')) return false;
   const used = getButlerEffectData();
   return !(used && used.playerId === state.userId && used.discussionPhaseId === discussionId);
@@ -2042,6 +2054,8 @@ function renderCenterDeck(){
 
   const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
   const revealExileCards = shouldRevealExileCardsForMe();
+  const butlerClickable = canUseButlerEffect();
+  if(butlerClickable) exileTray.classList.add('butler-clickable');
   excludedCards.forEach((name) => {
     const card = document.createElement('div');
     card.className = 'deck-exile-card';
@@ -2050,7 +2064,7 @@ function renderCenterDeck(){
     img.src = revealExileCards ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
-    if(canUseButlerEffect()){
+    if(butlerClickable){
       card.classList.add('butler-clickable');
       card.addEventListener('click', activateButlerEffect);
     }
@@ -2105,15 +2119,6 @@ function renderCenterDeck(){
       card.appendChild(img);
       shuffleDeck.appendChild(card);
     }
-
-    const frontCard = shuffleDeck.querySelector('[data-role="shuffle-front"]')
-      || shuffleDeck.querySelector('.shuffle-card');
-
-    const badge = document.createElement('div');
-    badge.className = 'count-badge';
-    badge.dataset.role = 'deck-count';
-    badge.textContent = String(deckCount);
-    if(frontCard) frontCard.appendChild(badge);
 
     wrap.appendChild(shuffleDeck);
   }
