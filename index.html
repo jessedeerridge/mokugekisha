@@ -821,6 +821,14 @@ const state = {
   votes: {}
 };
 
+function shouldShowRevealedCards(){
+  return !!(state.votePhase && state.votePhase.status === 'revealed' && state.votePhase.revealAllOpen);
+}
+function getCenterRevealCardName(){
+  const deck = Array.isArray(state.deck) ? state.deck : [];
+  return deck.length ? deck[deck.length - 1] : null;
+}
+
 // DOM
 const mainEl = document.getElementById('main');
 const joinBox = document.getElementById('joinBox');
@@ -1082,6 +1090,7 @@ async function tryRevealVoteResult(){
   await update(ref(db), {
     [`rooms/${state.roomCode}/votePhase/status`]: 'revealed',
     [`rooms/${state.roomCode}/votePhase/finishedAt`]: Date.now(),
+    [`rooms/${state.roomCode}/votePhase/revealAllOpen`]: false,
     [`rooms/${state.roomCode}/votePhase/maxTargetIds`]: maxTargetIds,
     [`rooms/${state.roomCode}/votePhase/maxTargetId`]: maxTargetId,
     [`rooms/${state.roomCode}/votePhase/maxPlayerIds`]: maxPlayerIds,
@@ -1107,10 +1116,11 @@ async function showVoteResultFocus(){
   const focusPlayers = winnerTargetIds
     .map((id) => {
       if(id === '__DECK__'){
+        const centerCardName = getCenterRevealCardName();
         return {
           id,
           name: '中央のカード',
-          hand: ['__DECK__']
+          hand: [centerCardName || '__DECK__']
         };
       }
       const hand = state.hands[id] && Array.isArray(state.hands[id].cards)
@@ -1163,8 +1173,14 @@ async function showVoteResultFocus(){
   voteResultHand.classList.remove('show');
   void voteResultHand.offsetWidth;
   voteResultHand.classList.add('show');
-  await wait(1200);
+  await wait(2200);
   voteResultOverlay.classList.remove('visible');
+
+  if(state.isHost && state.roomCode && state.votePhase && state.votePhase.id){
+    await update(ref(db), {
+      [`rooms/${state.roomCode}/votePhase/revealAllOpen`]: true
+    });
+  }
 }
 
 applyCardAnimationSpeed();
@@ -1916,12 +1932,13 @@ function renderCenterDeck(){
   exileTray.dataset.role = 'deck-exile-tray';
 
   const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
+  const revealAllCards = shouldShowRevealedCards();
   excludedCards.forEach((name) => {
     const card = document.createElement('div');
     card.className = 'deck-exile-card';
     const img = document.createElement('img');
     img.alt = `除外カード:${name}`;
-    img.src = BACK_IMG;
+    img.src = revealAllCards ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
     exileTray.appendChild(card);
@@ -1969,7 +1986,8 @@ function renderCenterDeck(){
 
       const img = document.createElement('img');
       img.alt = '山札';
-      img.src = BACK_IMG;
+      const deckCardName = Array.isArray(state.deck) ? state.deck[i] : null;
+      img.src = revealAllCards && deckCardName ? cardImg(deckCardName) : BACK_IMG;
       img.loading = 'lazy';
       card.appendChild(img);
       shuffleDeck.appendChild(card);
@@ -2650,6 +2668,7 @@ function renderPlayerCircle(players){
   const nextPlayerId = getNextPlayerId();
   const turnTarget = getTurnTransferTarget();
   const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  const revealAllCards = shouldShowRevealedCards();
   const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
   const showVotedDone = hasMeVoted() && voteSelectable;
   const votersByTarget = getVoteVotersByTarget();
@@ -2738,15 +2757,19 @@ function renderPlayerCircle(players){
       const spread = 70;
       const base = (count > 1) ? (-spread/2) : 0;
 
-      cards.forEach((_name, idx2) => {
+      cards.forEach((cardName, idx2) => {
         const card = document.createElement('div');
         card.className = 'mini-card';
 
         const img = document.createElement('img');
-        img.alt = '裏面';
-        img.src = BACK_IMG;
+        img.alt = revealAllCards ? cardName : '裏面';
+        img.src = revealAllCards ? cardImg(cardName) : BACK_IMG;
         img.loading = 'lazy';
         card.appendChild(img);
+        if(revealAllCards){
+          appendCardNameBadge(card, cardName);
+          appendCardDescription(card, cardName);
+        }
 
         const angleDeg = (count > 1) ? base + (spread/(count-1))*idx2 : 0;
         card.style.setProperty('--vote-tx', '-50%');
