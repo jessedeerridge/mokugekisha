@@ -89,24 +89,62 @@
     line-height:1;
     pointer-events:none;
   }
-  .player-tag .vote-count-badge{
+  .player-tag .vote-voter-list{
+    position:absolute;
+    right:calc(100% + 8px);
+    top:50%;
+    transform:translateY(-50%);
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    pointer-events:none;
+  }
+  .player-tag .vote-voter-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:flex-end;
+    padding:2px 6px;
+    border-radius:999px;
+    background:rgba(17,17,17,.9);
+    color:#fff;
+    font-size:11px;
+    font-weight:700;
+    white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+  }
+  .deck-voter-list{
+    position:absolute;
+    right:calc(100% + 8px);
+    top:50%;
+    transform:translateY(-50%);
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    pointer-events:none;
+    z-index:25;
+  }
+  .deck-voter-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:flex-end;
+    padding:2px 6px;
+    border-radius:999px;
+    background:rgba(17,17,17,.9);
+    color:#fff;
+    font-size:11px;
+    font-weight:700;
+    white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+  }
+  .deck-vote-mail-icon{
     position:absolute;
     left:50%;
-    top:-24px;
+    top:-18px;
     transform:translateX(-50%);
-    min-width:22px;
-    height:22px;
-    border-radius:999px;
-    background:#111;
-    color:#fff;
-    font-size:12px;
-    font-weight:900;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:0 6px;
-    box-shadow:0 4px 10px rgba(0,0,0,.2);
+    font-size:14px;
+    line-height:1;
     pointer-events:none;
+    z-index:4;
   }
   .player-tag .mini-hand.next-turn-target::before{
     border-color:#2563eb;
@@ -882,12 +920,25 @@ function getVoteCounts(){
   });
   return counts;
 }
-async function submitVote(targetPlayerId){
+function getVoteVotersByTarget(){
+  const nameById = {};
+  latestPlayers.forEach((p) => { nameById[p.id] = p.name; });
+  const voters = {};
+  Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
+    if(typeof targetId !== 'string') return;
+    if(!voters[targetId]) voters[targetId] = [];
+    voters[targetId].push(nameById[voterId] || '名無し');
+  });
+  return voters;
+}
+async function submitVote(targetId){
   if(!state.roomCode || !state.userId) return;
   if(!isVotePhaseActive() || isVoteLocked()) return;
-  if(!latestPlayers.some((p) => p.id === targetPlayerId)) return;
+  const isDeckTarget = targetId === "__DECK__";
+  const isPlayerTarget = latestPlayers.some((p) => p.id === targetId);
+  if(!isDeckTarget && !isPlayerTarget) return;
   await update(ref(db), {
-    [`rooms/${state.roomCode}/votes/${state.userId}`]: targetPlayerId
+    [`rooms/${state.roomCode}/votes/${state.userId}`]: targetId
   });
 }
 async function tryRevealVoteResult(){
@@ -1687,9 +1738,7 @@ function renderCenterDeck(){
         card.style.setProperty('--vote-tx', isFront ? '0px' : `${offset}px`);
         card.style.setProperty('--vote-ty', isFront ? '0px' : `${offset}px`);
         card.style.setProperty('--vote-rot', '0deg');
-        card.addEventListener('click', () => {
-          showAnnouncePop('投票するプレイヤーのカードを選択');
-        });
+        card.addEventListener('click', () => submitVote('__DECK__'));
       }
 
       const img = document.createElement('img');
@@ -1702,6 +1751,30 @@ function renderCenterDeck(){
 
     const frontCard = shuffleDeck.querySelector('[data-role="shuffle-front"]')
       || shuffleDeck.querySelector('.shuffle-card');
+
+    const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
+    if(frontCard && myVoteTargetId === '__DECK__'){
+      const mail = document.createElement('span');
+      mail.className = 'deck-vote-mail-icon';
+      mail.textContent = '✉';
+      frontCard.appendChild(mail);
+    }
+
+    if(isVotePhaseActive() || isVoteLocked()){
+      const votersByTarget = getVoteVotersByTarget();
+      const voters = votersByTarget['__DECK__'] || [];
+      if(voters.length){
+        const deckVoterList = document.createElement('div');
+        deckVoterList.className = 'deck-voter-list';
+        voters.forEach((name) => {
+          const chip = document.createElement('span');
+          chip.className = 'deck-voter-chip';
+          chip.textContent = `👈${name}`;
+          deckVoterList.appendChild(chip);
+        });
+        wrap.appendChild(deckVoterList);
+      }
+    }
 
     const badge = document.createElement('div');
     badge.className = 'count-badge';
@@ -2349,9 +2422,7 @@ function renderPlayerCircle(players){
   const voteSelectable = isVotePhaseActive() && !isVoteLocked();
   const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
   const showVotedDone = hasMeVoted() && voteSelectable;
-  const voteCounts = isVoteLocked()
-    ? (state.votePhase && state.votePhase.counts ? state.votePhase.counts : getVoteCounts())
-    : null;
+  const votersByTarget = getVoteVotersByTarget();
 
   players.forEach((p, idx) => {
     const k = (meIndex === -1) ? idx : (idx - meIndex + n) % n;
@@ -2377,11 +2448,17 @@ function renderPlayerCircle(players){
       tag.appendChild(mail);
     }
 
-    if(voteCounts){
-      const countBadge = document.createElement('span');
-      countBadge.className = 'vote-count-badge';
-      countBadge.textContent = String(Number(voteCounts[p.id] || 0));
-      tag.appendChild(countBadge);
+    const voterNames = votersByTarget[p.id] || [];
+    if(voterNames.length){
+      const voterList = document.createElement('div');
+      voterList.className = 'vote-voter-list';
+      voterNames.forEach((name) => {
+        const chip = document.createElement('span');
+        chip.className = 'vote-voter-chip';
+        chip.textContent = `👈${name}`;
+        voterList.appendChild(chip);
+      });
+      tag.appendChild(voterList);
     }
 
     tag.onclick = () => {
