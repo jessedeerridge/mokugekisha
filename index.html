@@ -743,8 +743,8 @@ const BACK_IMG = 'mokugekiura.jpg';
 
 // ▼ デッキ内容（画像名は「カード名.jpg」）
 const CARDS = [
-  "黄客人1",
-  "黄客人2",
+  "客人",
+  "客人",
   "赤客人",
   "青客人",
   "殺人鬼",
@@ -872,7 +872,7 @@ function cardImg(name){
 }
 function getCardBadgeLabel(name){
   if(!name) return '';
-  if(/^黄客人[１２]$/.test(name) || name === '青客人' || name === '赤客人') return '客人';
+  if(name === '客人' || name === '青客人' || name === '赤客人') return '客人';
   return name;
 }
 function isDarkRoleCard(name){
