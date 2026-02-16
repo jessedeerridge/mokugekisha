@@ -104,6 +104,11 @@
     white-space:nowrap;
     box-shadow:0 2px 8px rgba(0,0,0,.2);
   }
+  .vote-voter-chip.invalidated{
+    background:#9ca3af;
+    border-color:#9ca3af;
+    color:#f9fafb;
+  }
   .player-tag.deck-vote-tag{
     background:transparent;
     border-color:transparent;
@@ -256,13 +261,13 @@
     animation:voteResultPop 1.2s ease-in-out forwards;
   }
   @keyframes voteResultPop{
-    0%{transform:scale(.86) rotate(0deg);opacity:0;}
-    12%{transform:scale(1.08) rotate(-1deg);opacity:1;}
-    26%{transform:scale(1) rotate(1deg);}
-    42%{transform:scale(1.06) rotate(-1.2deg);}
-    58%{transform:scale(1) rotate(1.1deg);}
-    74%{transform:scale(1.04) rotate(-.8deg);}
-    100%{transform:scale(1.02) rotate(0deg);opacity:1;}
+    0%{transform:translateX(0);opacity:0;}
+    12%{transform:translateX(0);opacity:1;}
+    28%{transform:translateX(-8px);}
+    44%{transform:translateX(8px);}
+    60%{transform:translateX(-6px);}
+    76%{transform:translateX(6px);}
+    100%{transform:translateX(0);opacity:1;}
   }
   .shuffle-card.back{
     transform: translate(var(--offsetX), var(--offsetY)) rotate(0deg);
@@ -997,15 +1002,29 @@ function areAllPlayersVoted(){
 function getVoteCounts(){
   const counts = {};
   latestPlayers.forEach((p) => { counts[p.id] = 0; });
+  counts.__DECK__ = 0;
+  const invalidatedVoterIds = getLawyerInvalidatedVoterIds();
   Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
     if(typeof targetId !== 'string') return;
     if(counts[targetId] == null) counts[targetId] = 0;
-    counts[targetId] += getVoterWeight(voterId);
+    counts[targetId] += getVoterWeight(voterId, invalidatedVoterIds);
   });
   return counts;
 }
-function getVoterWeight(voterId){
+function getLawyerInvalidatedVoterIds(){
+  const invalidated = new Set();
+  Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
+    if(typeof targetId !== 'string' || targetId === '__DECK__') return;
+    const hand = state.hands && state.hands[voterId];
+    const cards = hand && Array.isArray(hand.cards) ? hand.cards : [];
+    if(cards.includes('弁護士')) invalidated.add(targetId);
+  });
+  return invalidated;
+}
+function getVoterWeight(voterId, invalidatedVoterIds = null){
   if(!voterId) return 1;
+  const invalidated = invalidatedVoterIds || getLawyerInvalidatedVoterIds();
+  if(invalidated.has(voterId)) return 0;
   const hand = state.hands && state.hands[voterId];
   const cards = hand && Array.isArray(hand.cards) ? hand.cards : [];
   return cards.includes('富豪') ? 2 : 1;
@@ -1014,12 +1033,14 @@ function getVoteVotersByTarget(){
   const nameById = {};
   latestPlayers.forEach((p) => { nameById[p.id] = p.name; });
   const voters = {};
+  const invalidatedVoterIds = getLawyerInvalidatedVoterIds();
   Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
     if(typeof targetId !== 'string') return;
     if(!voters[targetId]) voters[targetId] = [];
     voters[targetId].push({
       name: nameById[voterId] || '名無し',
-      weight: getVoterWeight(voterId)
+      weight: getVoterWeight(voterId, invalidatedVoterIds),
+      invalidated: invalidatedVoterIds.has(voterId)
     });
   });
   return voters;
@@ -1041,23 +1062,28 @@ async function tryRevealVoteResult(){
 
   const counts = getVoteCounts();
   let maxCount = -1;
-  const maxPlayerIds = [];
-  latestPlayers.forEach((p) => {
-    const n = Number(counts[p.id] || 0);
+  const voteTargetIds = [...latestPlayers.map((p) => p.id), '__DECK__'];
+  const maxTargetIds = [];
+  voteTargetIds.forEach((targetId) => {
+    const n = Number(counts[targetId] || 0);
     if(n > maxCount){
       maxCount = n;
-      maxPlayerIds.length = 0;
-      maxPlayerIds.push(p.id);
+      maxTargetIds.length = 0;
+      maxTargetIds.push(targetId);
       return;
     }
     if(n === maxCount){
-      maxPlayerIds.push(p.id);
+      maxTargetIds.push(targetId);
     }
   });
+  const maxPlayerIds = maxTargetIds.filter((id) => id !== '__DECK__');
+  const maxTargetId = maxTargetIds[0] || null;
 
   await update(ref(db), {
     [`rooms/${state.roomCode}/votePhase/status`]: 'revealed',
     [`rooms/${state.roomCode}/votePhase/finishedAt`]: Date.now(),
+    [`rooms/${state.roomCode}/votePhase/maxTargetIds`]: maxTargetIds,
+    [`rooms/${state.roomCode}/votePhase/maxTargetId`]: maxTargetId,
     [`rooms/${state.roomCode}/votePhase/maxPlayerIds`]: maxPlayerIds,
     [`rooms/${state.roomCode}/votePhase/maxPlayerId`]: maxPlayerIds[0] || null,
     [`rooms/${state.roomCode}/votePhase/counts`]: counts
@@ -1067,15 +1093,26 @@ async function showVoteResultFocus(){
   if(!isVoteLocked()) return;
   if(lastRevealedVotePhaseId === state.votePhase.id) return;
 
-  const winnerIds = Array.isArray(state.votePhase.maxPlayerIds) && state.votePhase.maxPlayerIds.length
-    ? state.votePhase.maxPlayerIds
-    : (state.votePhase.maxPlayerId ? [state.votePhase.maxPlayerId] : []);
-  if(!winnerIds.length) return;
+  const winnerTargetIds = Array.isArray(state.votePhase.maxTargetIds) && state.votePhase.maxTargetIds.length
+    ? state.votePhase.maxTargetIds
+    : (Array.isArray(state.votePhase.maxPlayerIds) && state.votePhase.maxPlayerIds.length
+      ? state.votePhase.maxPlayerIds
+      : (state.votePhase.maxTargetId
+        ? [state.votePhase.maxTargetId]
+        : (state.votePhase.maxPlayerId ? [state.votePhase.maxPlayerId] : [])));
+  if(!winnerTargetIds.length) return;
 
   const playersById = {};
   latestPlayers.forEach((p) => { playersById[p.id] = p; });
-  const focusPlayers = winnerIds
+  const focusPlayers = winnerTargetIds
     .map((id) => {
+      if(id === '__DECK__'){
+        return {
+          id,
+          name: '中央のカード',
+          hand: ['__DECK__']
+        };
+      }
       const hand = state.hands[id] && Array.isArray(state.hands[id].cards)
         ? state.hands[id].cards
         : [];
@@ -1107,12 +1144,14 @@ async function showVoteResultFocus(){
       const card = document.createElement('div');
       card.className = 'card';
       const img = document.createElement('img');
-      img.alt = cardName;
-      img.src = cardImg(cardName);
+      img.alt = cardName === '__DECK__' ? '山札' : cardName;
+      img.src = cardName === '__DECK__' ? BACK_IMG : cardImg(cardName);
       img.loading = 'lazy';
       card.appendChild(img);
-      appendCardNameBadge(card, cardName);
-      appendCardDescription(card, cardName);
+      if(cardName !== '__DECK__'){
+        appendCardNameBadge(card, cardName);
+        appendCardDescription(card, cardName);
+      }
       cardsWrap.appendChild(card);
     });
 
@@ -1954,7 +1993,7 @@ function renderCenterDeck(){
   const myDisplayName = state.userName || ((latestPlayers.find((pp) => pp.id === state.userId) || {}).name) || '名無し';
   const deckVoterNames = allVoted
     ? (votersByTarget.__DECK__ || [])
-    : ((myVoteTargetId === '__DECK__' && hasMeVoted()) ? [{ name: myDisplayName, weight: getVoterWeight(state.userId) }] : []);
+    : ((myVoteTargetId === '__DECK__' && hasMeVoted()) ? [{ name: myDisplayName, weight: getVoterWeight(state.userId), invalidated: false }] : []);
 
   if(deckVoterNames.length){
     const tag = document.createElement('div');
@@ -1967,8 +2006,8 @@ function renderCenterDeck(){
     voterList.className = 'vote-voter-list';
     deckVoterNames.forEach((voter) => {
       const chip = document.createElement('span');
-      chip.className = 'vote-voter-chip';
-      const pointer = voter.weight >= 2 ? '👈👈' : '👈';
+      chip.className = `vote-voter-chip${voter.invalidated ? ' invalidated' : ''}`;
+      const pointer = voter.invalidated ? '✕' : (voter.weight >= 2 ? '👈👈' : '👈');
       chip.textContent = `${pointer}${voter.name}`;
       voterList.appendChild(chip);
     });
@@ -2636,14 +2675,14 @@ function renderPlayerCircle(players){
 
     const voterNames = allVoted
       ? (votersByTarget[p.id] || [])
-      : ((myVoteTargetId === p.id && hasMeVoted()) ? [{ name: myDisplayName, weight: getVoterWeight(state.userId) }] : []);
+      : ((myVoteTargetId === p.id && hasMeVoted()) ? [{ name: myDisplayName, weight: getVoterWeight(state.userId), invalidated: false }] : []);
     if(voterNames.length){
       const voterList = document.createElement('div');
       voterList.className = 'vote-voter-list';
       voterNames.forEach((voter) => {
         const chip = document.createElement('span');
-        chip.className = 'vote-voter-chip';
-        const pointer = voter.weight >= 2 ? '👈👈' : '👈';
+        chip.className = `vote-voter-chip${voter.invalidated ? ' invalidated' : ''}`;
+        const pointer = voter.invalidated ? '✕' : (voter.weight >= 2 ? '👈👈' : '👈');
         chip.textContent = `${pointer}${voter.name}`;
         voterList.appendChild(chip);
       });
