@@ -119,21 +119,18 @@
   .player-tag.deck-vote-tag .vote-voter-list{
     top:50%;
   }
-  .player-tag .mini-hand.next-turn-target::before{
-    border-color:#2563eb;
-    border-style:solid;
-    border-width:3px;
-  }
-  .player-tag .mini-hand.next-turn-target.drop-ready::before{
-    background:rgba(37,99,235,.14);
-  }
+  .player-tag .mini-hand.next-turn-target::before,
   .deck-wrap.next-turn-target::before{
-    border-color:#2563eb;
-    border-style:solid;
-    border-width:3px;
+    border:none;
+    background:transparent;
   }
-  .deck-wrap.next-turn-target.drop-ready::before{
-    background:rgba(37,99,235,.14);
+  body.dragging-card .player-tag .mini-hand.next-turn-target::before,
+  body.dragging-card .deck-wrap.next-turn-target::before{
+    background:rgba(125,211,252,.24);
+  }
+  body.dragging-card .player-tag .mini-hand.next-turn-target.drop-ready::before,
+  body.dragging-card .deck-wrap.next-turn-target.drop-ready::before{
+    background:rgba(56,189,248,.36);
   }
 
   /* =========================
@@ -155,7 +152,8 @@
     top:50%;
     width:var(--zone-circle-size);
     height:var(--zone-circle-size);
-    border:2px dashed rgba(17,17,17,.4);
+    border:none;
+    background:transparent;
     border-radius:50%;
     transform:translate(-50%,-50%);
     box-sizing:border-box;
@@ -1554,6 +1552,7 @@ function cleanupPointerDragState(options = {}){
   if(cardEl && pointerId != null){
     try { cardEl.releasePointerCapture(pointerId); } catch (_e) {}
   }
+  document.body.classList.remove('dragging-card');
   activePointerDrag = null;
 }
 
@@ -1632,6 +1631,7 @@ function startPointerCardDrag(cardEl, cardIndex, ev){
     offsetY: ev.clientY - rect.top,
   };
 
+  document.body.classList.add('dragging-card');
   cardEl.classList.add('pointer-dragging-source');
   cardEl.setPointerCapture(ev.pointerId);
   setPointerGhostPosition(ev.clientX, ev.clientY);
@@ -1687,10 +1687,7 @@ function renderMyHand(){
     appendCardNameBadge(card, name);
     appendCardDescription(card, name);
 
-    if(voteSelectable){
-      card.classList.add('vote-clickable');
-      card.addEventListener('click', () => submitVote(myId));
-    } else if(canTransfer){
+    if(canTransfer){
       card.style.cursor = 'grab';
       card.style.touchAction = 'none';
       card.addEventListener('pointerdown', (e) => startPointerCardDrag(card, idx, e));
@@ -1992,15 +1989,6 @@ function renderCenterDeck(){
       card.appendChild(img);
       shuffleDeck.appendChild(card);
     }
-
-    const frontCard = shuffleDeck.querySelector('[data-role="shuffle-front"]')
-      || shuffleDeck.querySelector('.shuffle-card');
-
-    const badge = document.createElement('div');
-    badge.className = 'count-badge';
-    badge.dataset.role = 'deck-count';
-    badge.textContent = String(deckCount);
-    if(frontCard) frontCard.appendChild(badge);
 
     wrap.appendChild(shuffleDeck);
   }
@@ -2710,7 +2698,7 @@ function renderPlayerCircle(players){
 
     tag.onclick = () => {
       if(voteSelectable){
-        submitVote(p.id);
+        if(p.id !== state.userId) submitVote(p.id);
         return;
       }
       if (p.id === state.userId) return;
