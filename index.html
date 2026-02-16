@@ -402,6 +402,11 @@
     pointer-events:none;
     z-index:2;
   }
+  .card-name-badge.dark-role{
+    color:#111;
+    background:rgba(229,231,235,.95);
+    border-color:#111;
+  }
   .card.dragging-source{
     visibility:visible;
     opacity:1;
@@ -870,10 +875,14 @@ function getCardBadgeLabel(name){
   if(/^黄客人[１２]$/.test(name) || name === '青客人' || name === '赤客人') return '客人';
   return name;
 }
+function isDarkRoleCard(name){
+  return name === '共犯者' || name === '殺人鬼';
+}
 function appendCardNameBadge(cardEl, name){
   if(!cardEl || !name) return;
   const badge = document.createElement('div');
   badge.className = 'card-name-badge';
+  if(isDarkRoleCard(name)) badge.classList.add('dark-role');
   badge.textContent = getCardBadgeLabel(name);
   cardEl.appendChild(badge);
 }
@@ -1024,6 +1033,7 @@ function renderHelpGrid(){
   CARDS.forEach((name) => {
     const item = document.createElement('div');
     item.className = 'help-item' + (state.isHost ? ' host-clickable' : '');
+    item.title = getCardBadgeLabel(name);
 
     const enabled = (state.deckConfig[name] !== false);
     if(!enabled) item.classList.add('disabled');
@@ -1031,7 +1041,7 @@ function renderHelpGrid(){
     const card = document.createElement('div');
     card.className = 'card';
     const img = document.createElement('img');
-    img.alt = name;
+    img.alt = getCardBadgeLabel(name);
     img.src = cardImg(name);
     img.loading = 'lazy';
     card.appendChild(img);
