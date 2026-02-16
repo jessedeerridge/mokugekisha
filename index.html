@@ -801,6 +801,9 @@ let startRunning = false;
 let lastStartAnimationId = null;
 let runningStartAnimationId = null;
 let lastTransferAnimationId = null;
+let hasHydratedRoom = false;
+let hasHydratedHands = false;
+let hasHydratedDeck = false;
 let isTransferringCard = false;
 let activePointerDrag = null;
 let lastDiscussionPhaseId = null;
@@ -822,6 +825,23 @@ const KILLER_PEEK_OFFSET_X = -52;
 const KILLER_PEEK_OFFSET_Y = -8;
 const KILLER_PEEK_ROTATE_DEG = -4;
 const KILLER_PEEK_HOLD_MS = speedAdjustedMs(220);
+
+function getStartAnimationSeenStorageKey(roomCode){
+  if(!roomCode) return null;
+  return `bbSeenStartAnimation:${roomCode}`;
+}
+
+function getSeenStartAnimationId(roomCode = state.roomCode){
+  const key = getStartAnimationSeenStorageKey(roomCode);
+  if(!key) return null;
+  return sessionStorage.getItem(key);
+}
+
+function setSeenStartAnimationId(animationId, roomCode = state.roomCode){
+  const key = getStartAnimationSeenStorageKey(roomCode);
+  if(!key || !animationId) return;
+  sessionStorage.setItem(key, animationId);
+}
 
 // ========= ユーティリティ =========
 function generateRoomCode(length = 6){
@@ -1161,6 +1181,7 @@ function syncDiscussionPhase(data){
 function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   onValue(roomRef, snap => {
+    hasHydratedRoom = true;
     state.room = snap.val() || {};
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
@@ -1185,6 +1206,7 @@ function subscribeHostState(){
 function subscribeHands(){
   const handsRef = ref(db, `rooms/${state.roomCode}/hands`);
   onValue(handsRef, snap => {
+    hasHydratedHands = true;
     state.hands = snap.val() || {};
     renderHands();
   });
@@ -1211,6 +1233,7 @@ function subscribeDeckConfig(){
 function subscribeDeck(){
   const deckRef = ref(db, `rooms/${state.roomCode}/deck`);
   onValue(deckRef, snap => {
+    hasHydratedDeck = true;
     const d = snap.val();
     state.deck = Array.isArray(d) ? d : [];
     // 既に円が描画されていれば更新
@@ -1245,17 +1268,25 @@ function subscribeStartAnimation(){
   onValue(animRef, snap => {
     const data = snap.val();
     if(!data || !data.id || data.status !== 'run') return;
+    if(getSeenStartAnimationId() === data.id){
+      lastStartAnimationId = data.id;
+      return;
+    }
     if(lastStartAnimationId === data.id) return;
+
+    if(!hasHydratedRoom || !hasHydratedHands || !hasHydratedDeck) return;
 
     const hasStartedRound = Object.values(state.hands || {}).some((hand) => {
       return hand && Array.isArray(hand.cards) && hand.cards.length > 0;
     });
     if(hasStartedRound || (state.deck && state.deck.length > 0 && state.room && state.room.startPlayerId)){
       lastStartAnimationId = data.id;
+      setSeenStartAnimationId(data.id);
       return;
     }
 
     lastStartAnimationId = data.id;
+    setSeenStartAnimationId(data.id);
     runStartAnimation(data);
   });
 }
