@@ -809,6 +809,8 @@ let lastDiscussionPhaseId = null;
 let discussionTimerInterval = null;
 let discussionPhaseEnded = false;
 let lastRevealedVotePhaseId = null;
+let hasInitializedRoomSubscription = false;
+let hasInitializedVotePhaseSubscription = false;
 const CARD_MOVE_SPEED_RATIO = 0.7;
 const TRANSFER_TO_DRAW_DELAY_MS = speedAdjustedMs(900);
 const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
@@ -1110,10 +1112,12 @@ function formatTimerText(totalSec){
   return `${String(min).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
 }
 
-function runDiscussionTimer(startedAtMs, durationSec){
+function runDiscussionTimer(startedAtMs, durationSec, options = {}){
   const startMs = Number(startedAtMs || Date.now());
   const useDurationSec = Number(durationSec) > 0 ? Number(durationSec) : getDiscussionDurationSec();
   const endMs = startMs + useDurationSec * 1000;
+  const skipExpiredTransition = !!options.skipExpiredTransition;
+  const wasAlreadyExpiredAtStart = Date.now() >= endMs;
 
   clearDiscussionTimer();
   discussionPhaseEnded = false;
@@ -1127,6 +1131,7 @@ function runDiscussionTimer(startedAtMs, durationSec){
     if(remainMs <= 0 && !discussionPhaseEnded){
       discussionPhaseEnded = true;
       clearDiscussionTimer();
+      if(skipExpiredTransition && wasAlreadyExpiredAtStart) return;
       showAnnouncePop('投票！');
       if(state.isHost && state.roomCode && state.room && state.room.discussionPhase && state.room.discussionPhase.id){
         update(ref(db), {
@@ -1145,7 +1150,7 @@ function runDiscussionTimer(startedAtMs, durationSec){
   discussionTimerInterval = setInterval(tick, 250);
 }
 
-function syncDiscussionPhase(data){
+function syncDiscussionPhase(data, options = {}){
   if(!data || !data.id){
     lastDiscussionPhaseId = null;
     discussionPhaseEnded = false;
@@ -1155,18 +1160,26 @@ function syncDiscussionPhase(data){
 
   if(lastDiscussionPhaseId === data.id) return;
   lastDiscussionPhaseId = data.id;
-  showAnnouncePop('議論開始！');
-  runDiscussionTimer(data.startedAt, data.durationSec);
+  if(!options.suppressAnnounce){
+    showAnnouncePop('議論開始！');
+  }
+  runDiscussionTimer(data.startedAt, data.durationSec, {
+    skipExpiredTransition: !!options.suppressAnnounce
+  });
 }
 
 // ========= Firebase subscribe =========
 function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   onValue(roomRef, snap => {
+    const isInitialSnapshot = !hasInitializedRoomSubscription;
+    hasInitializedRoomSubscription = true;
     state.room = snap.val() || {};
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
-    syncDiscussionPhase(state.room.discussionPhase || null);
+    syncDiscussionPhase(state.room.discussionPhase || null, {
+      suppressAnnounce: isInitialSnapshot
+    });
     syncSeatUI();
     if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
     if(state.isHost) tryRevealVoteResult();
@@ -1223,6 +1236,18 @@ function subscribeVotePhase(){
   const phaseRef = ref(db, `rooms/${state.roomCode}/votePhase`);
   onValue(phaseRef, snap => {
     state.votePhase = snap.val() || null;
+
+    if(!hasInitializedVotePhaseSubscription){
+      hasInitializedVotePhaseSubscription = true;
+      if(state.votePhase && state.votePhase.status === 'revealed' && state.votePhase.id){
+        lastRevealedVotePhaseId = state.votePhase.id;
+      } else {
+        lastRevealedVotePhaseId = null;
+      }
+      renderHands();
+      return;
+    }
+
     if(!state.votePhase || state.votePhase.status !== 'revealed'){
       lastRevealedVotePhaseId = null;
     }
@@ -1530,8 +1555,12 @@ btnJoin.addEventListener('click', async () => {
 
   hasInitializedStartAnimation = false;
   hasInitializedTransferAnimation = false;
+  hasInitializedRoomSubscription = false;
+  hasInitializedVotePhaseSubscription = false;
   lastStartAnimationId = null;
   lastTransferAnimationId = null;
+  lastDiscussionPhaseId = null;
+  lastRevealedVotePhaseId = null;
 
   subscribeRoom();
   subscribeHostState();
