@@ -120,20 +120,20 @@
     top:50%;
   }
   .player-tag .mini-hand.next-turn-target::before{
-    border-color:#2563eb;
-    border-style:solid;
-    border-width:3px;
+    border:none;
+    background:transparent;
   }
+  .player-tag .mini-hand.next-turn-target.drag-hint::before,
   .player-tag .mini-hand.next-turn-target.drop-ready::before{
-    background:rgba(37,99,235,.14);
+    background:rgba(125,211,252,.35);
   }
   .deck-wrap.next-turn-target::before{
-    border-color:#2563eb;
-    border-style:solid;
-    border-width:3px;
+    border:none;
+    background:transparent;
   }
+  .deck-wrap.next-turn-target.drag-hint::before,
   .deck-wrap.next-turn-target.drop-ready::before{
-    background:rgba(37,99,235,.14);
+    background:rgba(125,211,252,.35);
   }
 
   /* =========================
@@ -155,7 +155,8 @@
     top:50%;
     width:var(--zone-circle-size);
     height:var(--zone-circle-size);
-    border:2px dashed rgba(17,17,17,.4);
+    border:none;
+    background:transparent;
     border-radius:50%;
     transform:translate(-50%,-50%);
     box-sizing:border-box;
@@ -355,6 +356,11 @@
     display:block;
     transform:scale(1.05);
   }
+  .deck-exile-card.butler-clickable{
+    pointer-events:auto;
+    cursor:pointer;
+    animation:votePulse 1.05s ease-in-out infinite;
+  }
 
   /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
   .player-tag .mini-hand{
@@ -409,6 +415,10 @@
     overflow:hidden;
     display:flex;align-items:center;justify-content:center;
     user-select:none;
+  }
+  .card.butler-peeked{
+    outline:3px dashed #2563eb;
+    outline-offset:4px;
   }
   .card-name-badge{
     position:absolute;
@@ -829,6 +839,23 @@ function getCenterRevealCardName(){
   return deck.length ? deck[deck.length - 1] : null;
 }
 
+function hasMyButlerCard(){
+  const myHand = state.hands && state.userId && state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
+    ? state.hands[state.userId].cards
+    : [];
+  return myHand.includes(SPECIAL_DECK_OFFSET_CARD);
+}
+function isDiscussionPeekWindow(){
+  const phase = state.room && state.room.discussionPhase;
+  if(!phase || !phase.startedAt) return false;
+  const durationSec = Number(phase.durationSec) > 0 ? Number(phase.durationSec) : getDiscussionDurationSec();
+  const endAt = Number(phase.startedAt) + durationSec * 1000;
+  return Date.now() < endAt;
+}
+function canUseButlerPeek(){
+  return hasMyButlerCard() && isDiscussionPeekWindow();
+}
+
 // DOM
 const mainEl = document.getElementById('main');
 const joinBox = document.getElementById('joinBox');
@@ -888,6 +915,7 @@ let activePointerDrag = null;
 let lastDiscussionPhaseId = null;
 let discussionTimerInterval = null;
 let discussionPhaseEnded = false;
+let hasButlerLocalPeek = false;
 let lastRevealedVotePhaseId = null;
 let hasInitializedRoomSubscription = false;
 let hasInitializedVotePhaseSubscription = false;
@@ -1341,6 +1369,7 @@ function runDiscussionTimer(startedAtMs, durationSec, options = {}){
     if(remainMs <= 0 && !discussionPhaseEnded){
       discussionPhaseEnded = true;
       clearDiscussionTimer();
+      renderHands();
       if(skipExpiredTransition && wasAlreadyExpiredAtStart) return;
       showAnnouncePop('投票！');
       if(state.isHost && state.roomCode && state.room && state.room.discussionPhase && state.room.discussionPhase.id){
@@ -1364,6 +1393,7 @@ function syncDiscussionPhase(data, options = {}){
   if(!data || !data.id){
     lastDiscussionPhaseId = null;
     discussionPhaseEnded = false;
+    hasButlerLocalPeek = false;
     clearDiscussionTimer();
     return;
   }
@@ -1547,10 +1577,11 @@ function subscribeTransferAnimation(){
 function cleanupPointerDragState(options = {}){
   if(!activePointerDrag) return;
   const { keepSourceHidden = false } = options;
-  const { cardEl, ghostEl, dropTargetEl, pointerId } = activePointerDrag;
+  const { cardEl, ghostEl, dropTargetEl, pointerId, targetEl } = activePointerDrag;
   if(cardEl && !keepSourceHidden) cardEl.classList.remove('pointer-dragging-source');
   if(ghostEl) ghostEl.remove();
   if(dropTargetEl) dropTargetEl.classList.remove('drop-ready');
+  if(targetEl) targetEl.classList.remove('drag-hint');
   if(cardEl && pointerId != null){
     try { cardEl.releasePointerCapture(pointerId); } catch (_e) {}
   }
@@ -1630,9 +1661,11 @@ function startPointerCardDrag(cardEl, cardIndex, ev){
     pointerId: ev.pointerId,
     offsetX: ev.clientX - rect.left,
     offsetY: ev.clientY - rect.top,
+    targetEl: target
   };
 
   cardEl.classList.add('pointer-dragging-source');
+  target.classList.add('drag-hint');
   cardEl.setPointerCapture(ev.pointerId);
   setPointerGhostPosition(ev.clientX, ev.clientY);
   updateDropReadyState(ev.clientX, ev.clientY);
@@ -1672,10 +1705,11 @@ function renderMyHand(){
 
   const voteSelectable = isVotePhaseActive() && !isVoteLocked();
   const canTransfer = !voteSelectable && handData.cards.length === 2 && !!getTurnTransferTarget();
+  const showButlerPeekHighlight = hasButlerLocalPeek;
 
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = `card${showButlerPeekHighlight ? ' butler-peeked' : ''}`;
 
     const img = document.createElement('img');
     img.alt = name;
@@ -1933,14 +1967,23 @@ function renderCenterDeck(){
 
   const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
   const revealAllCards = shouldShowRevealedCards();
+  const revealByButler = hasButlerLocalPeek;
+  const butlerPeekEnabled = canUseButlerPeek();
   excludedCards.forEach((name) => {
     const card = document.createElement('div');
     card.className = 'deck-exile-card';
     const img = document.createElement('img');
     img.alt = `除外カード:${name}`;
-    img.src = revealAllCards ? cardImg(name) : BACK_IMG;
+    img.src = (revealAllCards || revealByButler) ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
+    if(!revealAllCards && butlerPeekEnabled){
+      card.classList.add('butler-clickable');
+      card.addEventListener('click', () => {
+        hasButlerLocalPeek = true;
+        renderHands();
+      });
+    }
     exileTray.appendChild(card);
   });
   if(excludedCards.length) exileTray.classList.add('visible');
@@ -2871,6 +2914,7 @@ async function dealInitialHands(){
   await update(ref(db), resetPatch);
   state.hands = {};
   state.startExcludedCards = [];
+  hasButlerLocalPeek = false;
   renderHands();
   await wait(80);
 
@@ -2968,6 +3012,7 @@ btnResetRoom.addEventListener('click', async () => {
   ]);
 
   state.seatedTable = null;
+  hasButlerLocalPeek = false;
   startPop.classList.add('hidden');
   await syncSeatUI();
 });
