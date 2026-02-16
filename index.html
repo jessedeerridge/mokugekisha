@@ -976,12 +976,18 @@ function areAllPlayersVoted(){
 function getVoteCounts(){
   const counts = {};
   latestPlayers.forEach((p) => { counts[p.id] = 0; });
-  Object.values(state.votes || {}).forEach((targetId) => {
+  Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
     if(typeof targetId !== 'string') return;
     if(counts[targetId] == null) counts[targetId] = 0;
-    counts[targetId] += 1;
+    counts[targetId] += getVoterWeight(voterId);
   });
   return counts;
+}
+function getVoterWeight(voterId){
+  if(!voterId) return 1;
+  const hand = state.hands && state.hands[voterId];
+  const cards = hand && Array.isArray(hand.cards) ? hand.cards : [];
+  return cards.includes('富豪') ? 2 : 1;
 }
 function getVoteVotersByTarget(){
   const nameById = {};
@@ -990,7 +996,10 @@ function getVoteVotersByTarget(){
   Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
     if(typeof targetId !== 'string') return;
     if(!voters[targetId]) voters[targetId] = [];
-    voters[targetId].push(nameById[voterId] || '名無し');
+    voters[targetId].push({
+      name: nameById[voterId] || '名無し',
+      weight: getVoterWeight(voterId)
+    });
   });
   return voters;
 }
@@ -1888,7 +1897,7 @@ function renderCenterDeck(){
   const myDisplayName = state.userName || ((latestPlayers.find((pp) => pp.id === state.userId) || {}).name) || '名無し';
   const deckVoterNames = allVoted
     ? (votersByTarget.__DECK__ || [])
-    : ((myVoteTargetId === '__DECK__' && hasMeVoted()) ? [myDisplayName] : []);
+    : ((myVoteTargetId === '__DECK__' && hasMeVoted()) ? [{ name: myDisplayName, weight: getVoterWeight(state.userId) }] : []);
 
   if(deckVoterNames.length){
     const tag = document.createElement('div');
@@ -1899,10 +1908,11 @@ function renderCenterDeck(){
 
     const voterList = document.createElement('div');
     voterList.className = 'vote-voter-list';
-    deckVoterNames.forEach((name) => {
+    deckVoterNames.forEach((voter) => {
       const chip = document.createElement('span');
       chip.className = 'vote-voter-chip';
-      chip.textContent = `👈${name}`;
+      const pointer = voter.weight >= 2 ? '👈👈' : '👈';
+      chip.textContent = `${pointer}${voter.name}`;
       voterList.appendChild(chip);
     });
     tag.appendChild(voterList);
@@ -2569,14 +2579,15 @@ function renderPlayerCircle(players){
 
     const voterNames = allVoted
       ? (votersByTarget[p.id] || [])
-      : ((myVoteTargetId === p.id && hasMeVoted()) ? [myDisplayName] : []);
+      : ((myVoteTargetId === p.id && hasMeVoted()) ? [{ name: myDisplayName, weight: getVoterWeight(state.userId) }] : []);
     if(voterNames.length){
       const voterList = document.createElement('div');
       voterList.className = 'vote-voter-list';
-      voterNames.forEach((name) => {
+      voterNames.forEach((voter) => {
         const chip = document.createElement('span');
         chip.className = 'vote-voter-chip';
-        chip.textContent = `👈${name}`;
+        const pointer = voter.weight >= 2 ? '👈👈' : '👈';
+        chip.textContent = `${pointer}${voter.name}`;
         voterList.appendChild(chip);
       });
       tag.appendChild(voterList);
