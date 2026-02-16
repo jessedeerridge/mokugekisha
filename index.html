@@ -72,8 +72,48 @@
     padding:4px 8px;border-radius:999px;background:#f8f8f8;
     border:1px solid #ddd;font-size:12px;white-space:nowrap;
     z-index:20;
+    transition:background-color .2s ease,color .2s ease,border-color .2s ease;
   }
   .player-tag.me{ background:#111;color:#fff;border-color:#111; }
+  .player-tag.vote-done{
+    background:#111;
+    color:#fff;
+    border-color:#111;
+  }
+  .vote-voter-list{
+    position:absolute;
+    left:calc(100% + 8px);
+    top:50%;
+    transform:translateY(-50%);
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    pointer-events:none;
+  }
+  .vote-voter-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:flex-end;
+    padding:4px 8px;
+    border-radius:999px;
+    background:#111;
+    border:1px solid #ddd;
+    color:#fff;
+    font-size:12px;
+    font-weight:400;
+    white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+  }
+  .player-tag.deck-vote-tag{
+    background:transparent;
+    border-color:transparent;
+    color:transparent;
+    pointer-events:none;
+    z-index:25;
+  }
+  .player-tag.deck-vote-tag .vote-voter-list{
+    top:50%;
+  }
   .player-tag .mini-hand.next-turn-target::before{
     border-color:#2563eb;
     border-style:solid;
@@ -155,6 +195,53 @@
     display:block;
     transform:scale(1.05);
     transform-origin:center;
+  }
+  .shuffle-card.vote-clickable,
+  .mini-card.vote-clickable,
+  .card.vote-clickable{
+    cursor:pointer;
+    animation:votePulse 1.05s ease-in-out infinite;
+  }
+
+  @keyframes votePulse{
+    0%,100%{ transform:translate(var(--vote-tx, 0), var(--vote-ty, 0)) rotate(var(--vote-rot, 0deg)) scale(1); }
+    50%{ transform:translate(var(--vote-tx, 0), var(--vote-ty, 0)) rotate(var(--vote-rot, 0deg)) scale(1.08); }
+  }
+
+  .vote-result-overlay{
+    position:fixed;
+    inset:0;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    background:rgba(0,0,0,.3);
+    z-index:520;
+    pointer-events:none;
+  }
+  .vote-result-overlay.visible{display:flex;}
+  .vote-result-hand{
+    display:flex;
+    gap:12px;
+    transform-origin:center;
+  }
+  .vote-result-hand .card{
+    width:120px;
+    height:180px;
+    border-radius:14px;
+    border-width:4px;
+    box-shadow:0 0 0 1px #000, 0 14px 30px rgba(0,0,0,.28);
+  }
+  .vote-result-hand.show{
+    animation:voteResultPop 1.2s ease-in-out forwards;
+  }
+  @keyframes voteResultPop{
+    0%{transform:scale(.86) rotate(0deg);opacity:0;}
+    12%{transform:scale(1.08) rotate(-1deg);opacity:1;}
+    26%{transform:scale(1) rotate(1deg);}
+    42%{transform:scale(1.06) rotate(-1.2deg);}
+    58%{transform:scale(1) rotate(1.1deg);}
+    74%{transform:scale(1.04) rotate(-.8deg);}
+    100%{transform:scale(1.02) rotate(0deg);opacity:1;}
   }
   .shuffle-card.back{
     transform: translate(var(--offsetX), var(--offsetY)) rotate(0deg);
@@ -268,6 +355,9 @@
     transform-origin:bottom center;
     background:#fff;
   }
+
+  .mini-card.vote-clickable{ pointer-events:auto; }
+  .mini-hand.vote-clickable{ pointer-events:auto; cursor:pointer; animation:votePulse 1.05s ease-in-out infinite; }
   .player-tag .mini-card img{
     width:100%;height:100%;
     object-fit:cover;
@@ -540,6 +630,10 @@
 
 <div id="announcePop" class="announce-pop" aria-live="polite"></div>
 
+<div id="voteResultOverlay" class="vote-result-overlay" aria-live="polite">
+  <div id="voteResultHand" class="vote-result-hand"></div>
+</div>
+
 <!-- ★ 参加者：ホスト人数選択中ポップ -->
 <div id="hostSelectingPop" class="host-selecting-pop hidden">ホストが人数を選択中</div>
 
@@ -650,7 +744,9 @@ const state = {
   deckConfig: {}, // { [cardName]: true/false }  true=濃い(投入) false=薄い(除外)
   deck: [],       // ★ 山札（残り）配列
   startAnimation: null,
-  startExcludedCards: []
+  startExcludedCards: [],
+  votePhase: null,
+  votes: {}
 };
 
 // DOM
@@ -693,6 +789,8 @@ const helpBody = document.getElementById('helpBody');
 const announcePop = document.getElementById('announcePop');
 const discussionTimer = document.getElementById('discussionTimer');
 const discussionTimerInner = document.getElementById('discussionTimerInner');
+const voteResultOverlay = document.getElementById('voteResultOverlay');
+const voteResultHand = document.getElementById('voteResultHand');
 
 /* 既存：一時保持など */
 let pendingSeatIndexToSteal = null;
@@ -708,6 +806,7 @@ let activePointerDrag = null;
 let lastDiscussionPhaseId = null;
 let discussionTimerInterval = null;
 let discussionPhaseEnded = false;
+let lastRevealedVotePhaseId = null;
 const CARD_MOVE_SPEED_RATIO = 0.7;
 const TRANSFER_TO_DRAW_DELAY_MS = speedAdjustedMs(900);
 const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
@@ -769,6 +868,110 @@ function getDiscussionDurationSec(){
   const sec = Number(state.room && state.room.discussionDurationSec);
   return Number.isFinite(sec) && sec > 0 ? sec : DEFAULT_DISCUSSION_DURATION_SEC;
 }
+function getActivePlayerIds(){
+  return latestPlayers.map((p) => p.id);
+}
+function hasMeVoted(){
+  return !!(state.userId && state.votes && state.votes[state.userId]);
+}
+function isVotePhaseActive(){
+  return !!(state.votePhase && state.votePhase.id && state.votePhase.status === 'open');
+}
+function isVoteLocked(){
+  return !!(state.votePhase && state.votePhase.status === 'revealed');
+}
+function areAllPlayersVoted(){
+  const playerIds = getActivePlayerIds();
+  if(!playerIds.length) return false;
+  return playerIds.every((id) => !!(state.votes && state.votes[id]));
+}
+function getVoteCounts(){
+  const counts = {};
+  latestPlayers.forEach((p) => { counts[p.id] = 0; });
+  Object.values(state.votes || {}).forEach((targetId) => {
+    if(typeof targetId !== 'string') return;
+    if(counts[targetId] == null) counts[targetId] = 0;
+    counts[targetId] += 1;
+  });
+  return counts;
+}
+function getVoteVotersByTarget(){
+  const nameById = {};
+  latestPlayers.forEach((p) => { nameById[p.id] = p.name; });
+  const voters = {};
+  Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
+    if(typeof targetId !== 'string') return;
+    if(!voters[targetId]) voters[targetId] = [];
+    voters[targetId].push(nameById[voterId] || '名無し');
+  });
+  return voters;
+}
+async function submitVote(targetId){
+  if(!state.roomCode || !state.userId) return;
+  if(!isVotePhaseActive() || isVoteLocked()) return;
+  const isDeckTarget = targetId === "__DECK__";
+  const isPlayerTarget = latestPlayers.some((p) => p.id === targetId);
+  if(!isDeckTarget && !isPlayerTarget) return;
+  await update(ref(db), {
+    [`rooms/${state.roomCode}/votes/${state.userId}`]: targetId
+  });
+}
+async function tryRevealVoteResult(){
+  if(!state.roomCode || !state.isHost) return;
+  if(!isVotePhaseActive() || isVoteLocked()) return;
+  if(!areAllPlayersVoted()) return;
+
+  const counts = getVoteCounts();
+  let maxPlayerId = null;
+  let maxCount = -1;
+  latestPlayers.forEach((p) => {
+    const n = Number(counts[p.id] || 0);
+    if(n > maxCount){
+      maxCount = n;
+      maxPlayerId = p.id;
+    }
+  });
+
+  await update(ref(db), {
+    [`rooms/${state.roomCode}/votePhase/status`]: 'revealed',
+    [`rooms/${state.roomCode}/votePhase/finishedAt`]: Date.now(),
+    [`rooms/${state.roomCode}/votePhase/maxPlayerId`]: maxPlayerId,
+    [`rooms/${state.roomCode}/votePhase/counts`]: counts
+  });
+}
+async function showVoteResultFocus(){
+  if(!isVoteLocked()) return;
+  if(lastRevealedVotePhaseId === state.votePhase.id) return;
+
+  const maxPlayerId = state.votePhase.maxPlayerId;
+  if(!maxPlayerId) return;
+
+  const hand = state.hands[maxPlayerId] && Array.isArray(state.hands[maxPlayerId].cards)
+    ? state.hands[maxPlayerId].cards
+    : [];
+  if(!hand.length) return;
+
+  lastRevealedVotePhaseId = state.votePhase.id;
+  voteResultHand.innerHTML = '';
+  hand.forEach((name) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const img = document.createElement('img');
+    img.alt = name;
+    img.src = cardImg(name);
+    img.loading = 'lazy';
+    card.appendChild(img);
+    voteResultHand.appendChild(card);
+  });
+
+  voteResultOverlay.classList.add('visible');
+  voteResultHand.classList.remove('show');
+  void voteResultHand.offsetWidth;
+  voteResultHand.classList.add('show');
+  await wait(1200);
+  voteResultOverlay.classList.remove('visible');
+}
+
 applyCardAnimationSpeed();
 function updateDeckOffsetByConfig(){
   const hasSpecialCard = (state.deckConfig[SPECIAL_DECK_OFFSET_CARD] !== false);
@@ -923,6 +1126,16 @@ function runDiscussionTimer(startedAtMs, durationSec){
       discussionPhaseEnded = true;
       clearDiscussionTimer();
       showAnnouncePop('投票！');
+      if(state.isHost && state.roomCode && state.room && state.room.discussionPhase && state.room.discussionPhase.id){
+        update(ref(db), {
+          [`rooms/${state.roomCode}/votePhase`]: {
+            id: state.room.discussionPhase.id,
+            status: 'open',
+            startedAt: Date.now()
+          },
+          [`rooms/${state.roomCode}/votes`]: {}
+        });
+      }
     }
   };
 
@@ -954,6 +1167,7 @@ function subscribeRoom(){
     syncDiscussionPhase(state.room.discussionPhase || null);
     syncSeatUI();
     if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
+    if(state.isHost) tryRevealVoteResult();
   });
 }
 function subscribeHostState(){
@@ -965,6 +1179,7 @@ function subscribeHostState(){
     syncSeatUI();
     // 開いているヘルプも再描画（クリック可/不可反映）
     if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
+    if(state.isHost) tryRevealVoteResult();
   });
 }
 function subscribeHands(){
@@ -989,6 +1204,7 @@ function subscribeDeckConfig(){
 
     // ヘルプ表示中なら即反映
     if(!helpBackdrop.classList.contains('hidden')) renderHelpGrid();
+    if(state.isHost) tryRevealVoteResult();
   });
 }
 // ★ 山札 subscribe（残り配列）
@@ -999,6 +1215,29 @@ function subscribeDeck(){
     state.deck = Array.isArray(d) ? d : [];
     // 既に円が描画されていれば更新
     if (latestPlayers.length) renderPlayerCircle(latestPlayers);
+  });
+}
+function subscribeVotePhase(){
+  const phaseRef = ref(db, `rooms/${state.roomCode}/votePhase`);
+  onValue(phaseRef, snap => {
+    state.votePhase = snap.val() || null;
+    if(!state.votePhase || state.votePhase.status !== 'revealed'){
+      lastRevealedVotePhaseId = null;
+    }
+    if(state.votePhase && state.votePhase.status === 'revealed'){
+      showVoteResultFocus();
+    }
+    renderHands();
+  });
+}
+function subscribeVotes(){
+  const votesRef = ref(db, `rooms/${state.roomCode}/votes`);
+  onValue(votesRef, snap => {
+    state.votes = snap.val() || {};
+    if(state.isHost){
+      tryRevealVoteResult();
+    }
+    renderHands();
   });
 }
 function subscribeStartAnimation(){
@@ -1175,7 +1414,8 @@ function renderMyHand(){
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
 
-  const canTransfer = handData.cards.length === 2 && !!getTurnTransferTarget();
+  const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  const canTransfer = !voteSelectable && handData.cards.length === 2 && !!getTurnTransferTarget();
 
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
@@ -1189,7 +1429,10 @@ function renderMyHand(){
 
     card.appendChild(img);
 
-    if(canTransfer){
+    if(voteSelectable){
+      card.classList.add('vote-clickable');
+      card.addEventListener('click', () => submitVote(myId));
+    } else if(canTransfer){
       card.style.cursor = 'grab';
       card.style.touchAction = 'none';
       card.addEventListener('pointerdown', (e) => startPointerCardDrag(card, idx, e));
@@ -1270,6 +1513,8 @@ btnJoin.addEventListener('click', async () => {
   subscribeHands();
   subscribeDeckConfig();
   subscribeDeck(); // ★ 山札
+  subscribeVotePhase();
+  subscribeVotes();
   subscribeStartAnimation();
   subscribeTransferAnimation();
 
@@ -1406,6 +1651,7 @@ function subscribePlayers(){
 
     await syncSeatUI();
     renderPlayerCircle(players);
+    if(state.isHost) tryRevealVoteResult();
   });
 }
 
@@ -1434,7 +1680,8 @@ function renderCenterDeck(){
   wrap.appendChild(exileTray);
 
   const turnTarget = getTurnTransferTarget();
-  if(turnTarget === 'deck'){
+  const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  if(turnTarget === 'deck' && !voteSelectable){
     wrap.classList.add('next-turn-target');
     wrap.dataset.dropTarget = 'active';
     wrap.dataset.transferTarget = 'deck';
@@ -1461,6 +1708,14 @@ function renderCenterDeck(){
       if(isFront) card.dataset.role = 'shuffle-front';
       if(isBack) card.dataset.role = 'shuffle-back';
 
+      if(isVotePhaseActive() && !isVoteLocked()){
+        card.classList.add('vote-clickable');
+        card.style.setProperty('--vote-tx', isFront ? '0px' : `${offset}px`);
+        card.style.setProperty('--vote-ty', isFront ? '0px' : `${offset}px`);
+        card.style.setProperty('--vote-rot', '0deg');
+        card.addEventListener('click', () => submitVote('__DECK__'));
+      }
+
       const img = document.createElement('img');
       img.alt = '山札';
       img.src = BACK_IMG;
@@ -1481,7 +1736,34 @@ function renderCenterDeck(){
     wrap.appendChild(shuffleDeck);
   }
 
-  if(turnTarget === 'deck'){
+  const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
+  const allVoted = areAllPlayersVoted();
+  const votersByTarget = getVoteVotersByTarget();
+  const myDisplayName = state.userName || ((latestPlayers.find((pp) => pp.id === state.userId) || {}).name) || '名無し';
+  const deckVoterNames = allVoted
+    ? (votersByTarget.__DECK__ || [])
+    : ((myVoteTargetId === '__DECK__' && hasMeVoted()) ? [myDisplayName] : []);
+
+  if(deckVoterNames.length){
+    const tag = document.createElement('div');
+    tag.className = 'player-tag deck-vote-tag';
+    tag.style.left = '50%';
+    tag.style.top = '14%';
+    tag.textContent = '　';
+
+    const voterList = document.createElement('div');
+    voterList.className = 'vote-voter-list';
+    deckVoterNames.forEach((name) => {
+      const chip = document.createElement('span');
+      chip.className = 'vote-voter-chip';
+      chip.textContent = `👈${name}`;
+      voterList.appendChild(chip);
+    });
+    tag.appendChild(voterList);
+    wrap.appendChild(tag);
+  }
+
+  if(turnTarget === 'deck' && !voteSelectable){
     wrap.addEventListener('dragover', (e) => {
       const myHand = state.hands[state.userId] && Array.isArray(state.hands[state.userId].cards)
         ? state.hands[state.userId].cards
@@ -1947,7 +2229,9 @@ async function transferCardToDeck(cardIndex){
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         startedAt: Date.now(),
         durationSec: getDiscussionDurationSec()
-      }
+      },
+      [`rooms/${state.roomCode}/votePhase`]: null,
+      [`rooms/${state.roomCode}/votes`]: {}
     });
 
     return true;
@@ -2104,7 +2388,6 @@ function renderPlayerCircle(players){
   playerCircle.innerHTML = '';
   if (!players.length) return;
 
-  // ★ 先に中央の山札を置く（クリックなどは未実装：表示のみ）
   renderCenterDeck();
 
   const n = players.length;
@@ -2112,6 +2395,14 @@ function renderPlayerCircle(players){
   const step = (2 * Math.PI) / n;
   const anchorAngle = Math.PI / 2;
   const meIndex = players.findIndex(p => p.id === state.userId);
+  const nextPlayerId = getNextPlayerId();
+  const turnTarget = getTurnTransferTarget();
+  const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
+  const showVotedDone = hasMeVoted() && voteSelectable;
+  const votersByTarget = getVoteVotersByTarget();
+  const allVoted = areAllPlayersVoted();
+  const myDisplayName = state.userName || ((players.find((pp) => pp.id === state.userId) || {}).name) || '名無し';
 
   players.forEach((p, idx) => {
     const k = (meIndex === -1) ? idx : (idx - meIndex + n) % n;
@@ -2122,15 +2413,34 @@ function renderPlayerCircle(players){
 
     const tag = document.createElement('div');
     tag.className = 'player-tag' + (p.id === state.userId ? ' me' : '');
+    if(showVotedDone && state.votes && state.votes[p.id]){
+      tag.classList.add('vote-done');
+    }
     tag.dataset.playerId = p.id;
     tag.textContent = p.name;
     tag.style.left = `${x}%`;
     tag.style.top = `${y}%`;
 
-    const nextPlayerId = getNextPlayerId();
-    const turnTarget = getTurnTransferTarget();
+    const voterNames = allVoted
+      ? (votersByTarget[p.id] || [])
+      : ((myVoteTargetId === p.id && hasMeVoted()) ? [myDisplayName] : []);
+    if(voterNames.length){
+      const voterList = document.createElement('div');
+      voterList.className = 'vote-voter-list';
+      voterNames.forEach((name) => {
+        const chip = document.createElement('span');
+        chip.className = 'vote-voter-chip';
+        chip.textContent = `👈${name}`;
+        voterList.appendChild(chip);
+      });
+      tag.appendChild(voterList);
+    }
 
     tag.onclick = () => {
+      if(voteSelectable){
+        submitVote(p.id);
+        return;
+      }
       if (p.id === state.userId) return;
       if (!state.roomCode) return;
       if (state.seatedTable !== null) return;
@@ -2141,12 +2451,11 @@ function renderPlayerCircle(players){
       kickDialog.classList.remove('hidden');
     };
 
-    // 他プレイヤーの手札位置は常に表示し、手札があれば裏面カードを重ねる
     if (p.id !== state.userId){
       const miniHand = document.createElement('div');
       miniHand.className = 'mini-hand';
 
-      if(turnTarget === 'player' && p.id === nextPlayerId){
+      if(turnTarget === 'player' && p.id === nextPlayerId && !voteSelectable){
         miniHand.classList.add('next-turn-target');
         miniHand.dataset.dropTarget = 'active';
         miniHand.dataset.transferTarget = 'player';
@@ -2187,10 +2496,22 @@ function renderPlayerCircle(players){
         card.appendChild(img);
 
         const angleDeg = (count > 1) ? base + (spread/(count-1))*idx2 : 0;
+        card.style.setProperty('--vote-tx', '-50%');
+        card.style.setProperty('--vote-ty', '0px');
+        card.style.setProperty('--vote-rot', `${angleDeg}deg`);
         card.style.transform = `translate(-50%,0) rotate(${angleDeg}deg)`;
         card.style.zIndex = String(10 + idx2);
+        if(voteSelectable){
+          card.classList.add('vote-clickable');
+          card.addEventListener('click', () => submitVote(p.id));
+        }
         miniHand.appendChild(card);
       });
+
+      if(voteSelectable && count === 0){
+        miniHand.classList.add('vote-clickable');
+        miniHand.addEventListener('click', () => submitVote(p.id));
+      }
 
       tag.appendChild(miniHand);
     }
@@ -2269,6 +2590,8 @@ async function dealInitialHands(){
   resetPatch[`${base}/startPlayerId`] = null;
   resetPatch[`${base}/startAnimation`] = null;
   resetPatch[`${base}/discussionPhase`] = null;
+  resetPatch[`${base}/votePhase`] = null;
+  resetPatch[`${base}/votes`] = {};
   await update(ref(db), resetPatch);
   state.hands = {};
   state.startExcludedCards = [];
@@ -2362,6 +2685,8 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/startAnimation`)),
     remove(ref(db, `${base}/transferAnimation`)),
     remove(ref(db, `${base}/discussionPhase`)),
+    remove(ref(db, `${base}/votePhase`)),
+    remove(ref(db, `${base}/votes`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
