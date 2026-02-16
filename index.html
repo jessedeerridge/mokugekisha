@@ -522,11 +522,33 @@
     display:flex;
     flex-direction:column;
     align-items:center;
-    justify-content:center;
+    justify-content:flex-start;
     cursor:default;
+    gap:6px;
   }
   .help-item.host-clickable{cursor:pointer;}
   .help-item.disabled{opacity:.25;}
+  .help-card-desc{
+    width:100%;
+    max-width:84px;
+    min-height:48px;
+    box-sizing:border-box;
+    border:1px solid #ddd;
+    border-radius:8px;
+    background:#fafafa;
+    padding:6px;
+    font-size:11px;
+    line-height:1.35;
+    text-align:left;
+    white-space:pre-line;
+  }
+  .help-card-desc.empty{
+    color:#9ca3af;
+    text-align:center;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
   .help-timer-item{
     border:1px solid #ddd;
     border-radius:12px;
@@ -878,6 +900,19 @@ function getCardBadgeLabel(name){
 function isDarkRoleCard(name){
   return name === '共犯者' || name === '殺人鬼';
 }
+const CARD_DESCRIPTION = {
+  '富豪': '2票になる。',
+  '探偵': '自分で決める。',
+  '殺人鬼': '最多票にならなければ勝ち。',
+  '共犯者': '殺人鬼を手伝う。',
+  '弁護士': '投票したプレイヤーの票を無効化する。',
+  '爆弾魔': '最多票になれば勝ち。',
+  '客人': '殺人鬼を見つける。'
+};
+function getCardDescription(name){
+  const role = getCardBadgeLabel(name);
+  return CARD_DESCRIPTION[role] || '';
+}
 function appendCardNameBadge(cardEl, name){
   if(!cardEl || !name) return;
   const badge = document.createElement('div');
@@ -1048,6 +1083,17 @@ function renderHelpGrid(){
     appendCardNameBadge(card, name);
 
     item.appendChild(card);
+
+    const desc = document.createElement('div');
+    desc.className = 'help-card-desc';
+    const text = getCardDescription(name);
+    if(text){
+      desc.textContent = text;
+    }else{
+      desc.textContent = '説明なし';
+      desc.classList.add('empty');
+    }
+    item.appendChild(desc);
 
     // ★ ホストだけクリックでON/OFF
     item.addEventListener('click', async () => {
