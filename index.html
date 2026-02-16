@@ -373,6 +373,7 @@
 
   /* ★ カード共通：白枠3px＋外側に黒枠1px */
   .card{
+    position:relative;
     width:60px;height:90px;border-radius:10px;
     border:3px solid #fff;
     box-shadow:
@@ -382,6 +383,29 @@
     overflow:hidden;
     display:flex;align-items:center;justify-content:center;
     user-select:none;
+  }
+  .card-name-badge{
+    position:absolute;
+    top:2px;
+    left:2px;
+    writing-mode:vertical-rl;
+    text-orientation:upright;
+    font-size:12px;
+    line-height:1;
+    font-weight:700;
+    letter-spacing:1px;
+    color:#111;
+    background:rgba(255,255,255,.9);
+    border:2px solid #dc2626;
+    border-radius:0;
+    padding:2px 1px;
+    pointer-events:none;
+    z-index:2;
+  }
+  .card-name-badge.dark-role{
+    color:#111;
+    background:rgba(229,231,235,.95);
+    border-color:#111;
   }
   .card.dragging-source{
     visibility:visible;
@@ -846,6 +870,22 @@ function cardImg(name){
   // 画像名.jpg ルール
   return `${name}.jpg`;
 }
+function getCardBadgeLabel(name){
+  if(!name) return '';
+  if(/^黄客人[１２]$/.test(name) || name === '青客人' || name === '赤客人') return '客人';
+  return name;
+}
+function isDarkRoleCard(name){
+  return name === '共犯者' || name === '殺人鬼';
+}
+function appendCardNameBadge(cardEl, name){
+  if(!cardEl || !name) return;
+  const badge = document.createElement('div');
+  badge.className = 'card-name-badge';
+  if(isDarkRoleCard(name)) badge.classList.add('dark-role');
+  badge.textContent = getCardBadgeLabel(name);
+  cardEl.appendChild(badge);
+}
 function cssMs(name){
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   if(v.endsWith('ms')) return parseFloat(v);
@@ -965,6 +1005,7 @@ async function showVoteResultFocus(){
     img.src = cardImg(name);
     img.loading = 'lazy';
     card.appendChild(img);
+    appendCardNameBadge(card, name);
     voteResultHand.appendChild(card);
   });
 
@@ -992,6 +1033,7 @@ function renderHelpGrid(){
   CARDS.forEach((name) => {
     const item = document.createElement('div');
     item.className = 'help-item' + (state.isHost ? ' host-clickable' : '');
+    item.title = getCardBadgeLabel(name);
 
     const enabled = (state.deckConfig[name] !== false);
     if(!enabled) item.classList.add('disabled');
@@ -999,10 +1041,11 @@ function renderHelpGrid(){
     const card = document.createElement('div');
     card.className = 'card';
     const img = document.createElement('img');
-    img.alt = name;
+    img.alt = getCardBadgeLabel(name);
     img.src = cardImg(name);
     img.loading = 'lazy';
     card.appendChild(img);
+    appendCardNameBadge(card, name);
 
     item.appendChild(card);
 
@@ -1474,6 +1517,7 @@ function renderMyHand(){
     img.draggable = false;
 
     card.appendChild(img);
+    appendCardNameBadge(card, name);
 
     if(voteSelectable){
       card.classList.add('vote-clickable');
