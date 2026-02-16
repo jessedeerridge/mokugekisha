@@ -407,6 +407,28 @@
     background:rgba(229,231,235,.95);
     border-color:#111;
   }
+  .card-desc-box{
+    position:absolute;
+    left:3px;
+    right:3px;
+    bottom:3px;
+    min-height:20px;
+    padding:2px 4px;
+    border-radius:0;
+    border:1px solid rgba(17,17,17,.75);
+    background:rgba(255,255,255,.65);
+    color:#111;
+    font-size:8px;
+    line-height:1.25;
+    font-weight:700;
+    z-index:2;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    box-sizing:border-box;
+    pointer-events:none;
+  }
   .card.dragging-source{
     visibility:visible;
     opacity:1;
@@ -875,6 +897,19 @@ function getCardBadgeLabel(name){
   if(/^黄客人[12１２]$/.test(name) || name === '青客人' || name === '赤客人') return '客人';
   return name;
 }
+function getCardDescription(name){
+  const label = getCardBadgeLabel(name);
+  const descriptions = {
+    '富豪': '2票になる。',
+    '探偵': '自分で決める。',
+    '殺人鬼': '最多票にならなければ勝ち。',
+    '共犯者': '殺人鬼を手伝う。',
+    '弁護士': '投票したプレイヤーの票を無効化する。',
+    '爆弾魔': '最多票になれば勝ち。',
+    '客人': '殺人鬼を見つける。'
+  };
+  return descriptions[label] || '';
+}
 function isDarkRoleCard(name){
   return name === '共犯者' || name === '殺人鬼';
 }
@@ -885,6 +920,15 @@ function appendCardNameBadge(cardEl, name){
   if(isDarkRoleCard(name)) badge.classList.add('dark-role');
   badge.textContent = getCardBadgeLabel(name);
   cardEl.appendChild(badge);
+}
+function appendCardDescription(cardEl, name){
+  if(!cardEl || !name) return;
+  const desc = getCardDescription(name);
+  if(!desc) return;
+  const descBox = document.createElement('div');
+  descBox.className = 'card-desc-box';
+  descBox.textContent = desc;
+  cardEl.appendChild(descBox);
 }
 function cssMs(name){
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -1006,6 +1050,7 @@ async function showVoteResultFocus(){
     img.loading = 'lazy';
     card.appendChild(img);
     appendCardNameBadge(card, name);
+    appendCardDescription(card, name);
     voteResultHand.appendChild(card);
   });
 
@@ -1046,6 +1091,7 @@ function renderHelpGrid(){
     img.loading = 'lazy';
     card.appendChild(img);
     appendCardNameBadge(card, name);
+    appendCardDescription(card, name);
 
     item.appendChild(card);
 
@@ -1518,6 +1564,7 @@ function renderMyHand(){
 
     card.appendChild(img);
     appendCardNameBadge(card, name);
+    appendCardDescription(card, name);
 
     if(voteSelectable){
       card.classList.add('vote-clickable');
