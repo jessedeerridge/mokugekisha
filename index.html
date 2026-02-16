@@ -373,8 +373,9 @@
 
   /* ★ カード共通：白枠3px＋外側に黒枠1px */
   .card{
+    position:relative;
     width:60px;height:90px;border-radius:10px;
-    border:3px solid #fff;
+    border:3px solid #f97316;
     box-shadow:
       0 0 0 1px #000,
       0 4px 12px rgba(0,0,0,.15);
@@ -391,13 +392,23 @@
   .card.pointer-dragging-source{
     visibility:hidden;
   }
-  .card img{
-    width:100%;
-    height:100%;
-    object-fit:cover;
-    display:block;
-    transform: scale(1.1);
-    transform-origin: center;
+  .card-name{
+    position:absolute;
+    top:6px;
+    right:6px;
+    writing-mode:vertical-rl;
+    text-orientation:upright;
+    font-size:12px;
+    font-weight:700;
+    color:#111;
+    letter-spacing:.04em;
+    line-height:1.1;
+    pointer-events:none;
+  }
+  .vote-result-hand .card-name{
+    top:12px;
+    right:10px;
+    font-size:24px;
   }
   .pointer-drag-ghost{
     position:fixed;
@@ -846,6 +857,12 @@ function cardImg(name){
   // 画像名.jpg ルール
   return `${name}.jpg`;
 }
+function createCardFace(name){
+  const cardName = document.createElement('div');
+  cardName.className = 'card-name';
+  cardName.textContent = name;
+  return cardName;
+}
 function cssMs(name){
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   if(v.endsWith('ms')) return parseFloat(v);
@@ -960,11 +977,7 @@ async function showVoteResultFocus(){
   hand.forEach((name) => {
     const card = document.createElement('div');
     card.className = 'card';
-    const img = document.createElement('img');
-    img.alt = name;
-    img.src = cardImg(name);
-    img.loading = 'lazy';
-    card.appendChild(img);
+    card.appendChild(createCardFace(name));
     voteResultHand.appendChild(card);
   });
 
@@ -998,11 +1011,7 @@ function renderHelpGrid(){
 
     const card = document.createElement('div');
     card.className = 'card';
-    const img = document.createElement('img');
-    img.alt = name;
-    img.src = cardImg(name);
-    img.loading = 'lazy';
-    card.appendChild(img);
+    card.appendChild(createCardFace(name));
 
     item.appendChild(card);
 
@@ -1466,14 +1475,7 @@ function renderMyHand(){
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
     card.className = 'card';
-
-    const img = document.createElement('img');
-    img.alt = name;
-    img.src = cardImg(name);
-    img.loading = 'lazy';
-    img.draggable = false;
-
-    card.appendChild(img);
+    card.appendChild(createCardFace(name));
 
     if(voteSelectable){
       card.classList.add('vote-clickable');
