@@ -80,16 +80,7 @@
     color:#fff;
     border-color:#111;
   }
-  .player-tag .vote-mail-icon{
-    position:absolute;
-    left:50%;
-    top:-18px;
-    transform:translateX(-50%);
-    font-size:14px;
-    line-height:1;
-    pointer-events:none;
-  }
-  .player-tag .vote-voter-list{
+  .vote-voter-list{
     position:absolute;
     left:calc(100% + 8px);
     top:50%;
@@ -99,28 +90,29 @@
     gap:4px;
     pointer-events:none;
   }
-  .player-tag .vote-voter-chip{
+  .vote-voter-chip{
     display:inline-flex;
     align-items:center;
     justify-content:flex-end;
-    padding:2px 6px;
+    padding:4px 8px;
     border-radius:999px;
-    background:rgba(17,17,17,.9);
-    color:#fff;
-    font-size:11px;
-    font-weight:700;
+    background:#f8f8f8;
+    border:1px solid #ddd;
+    color:#111;
+    font-size:12px;
+    font-weight:400;
     white-space:nowrap;
     box-shadow:0 2px 8px rgba(0,0,0,.2);
   }
-  .deck-vote-mail-icon{
-    position:absolute;
-    left:50%;
-    top:-18px;
-    transform:translateX(-50%);
-    font-size:14px;
-    line-height:1;
+  .player-tag.deck-vote-tag{
+    background:transparent;
+    border-color:transparent;
+    color:transparent;
     pointer-events:none;
-    z-index:4;
+    z-index:25;
+  }
+  .player-tag.deck-vote-tag .vote-voter-list{
+    top:50%;
   }
   .player-tag .mini-hand.next-turn-target::before{
     border-color:#2563eb;
@@ -231,6 +223,13 @@
     display:flex;
     gap:12px;
     transform-origin:center;
+  }
+  .vote-result-hand .card{
+    width:120px;
+    height:180px;
+    border-radius:14px;
+    border-width:4px;
+    box-shadow:0 0 0 1px #000, 0 14px 30px rgba(0,0,0,.28);
   }
   .vote-result-hand.show{
     animation:voteResultPop 1.2s ease-in-out forwards;
@@ -1728,14 +1727,6 @@ function renderCenterDeck(){
     const frontCard = shuffleDeck.querySelector('[data-role="shuffle-front"]')
       || shuffleDeck.querySelector('.shuffle-card');
 
-    const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
-    if(frontCard && myVoteTargetId === '__DECK__'){
-      const mail = document.createElement('span');
-      mail.className = 'deck-vote-mail-icon';
-      mail.textContent = '✉';
-      frontCard.appendChild(mail);
-    }
-
     const badge = document.createElement('div');
     badge.className = 'count-badge';
     badge.dataset.role = 'deck-count';
@@ -1743,6 +1734,33 @@ function renderCenterDeck(){
     if(frontCard) frontCard.appendChild(badge);
 
     wrap.appendChild(shuffleDeck);
+  }
+
+  const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
+  const allVoted = areAllPlayersVoted();
+  const votersByTarget = getVoteVotersByTarget();
+  const myDisplayName = state.userName || ((latestPlayers.find((pp) => pp.id === state.userId) || {}).name) || '名無し';
+  const deckVoterNames = allVoted
+    ? (votersByTarget.__DECK__ || [])
+    : ((myVoteTargetId === '__DECK__' && hasMeVoted()) ? [myDisplayName] : []);
+
+  if(deckVoterNames.length){
+    const tag = document.createElement('div');
+    tag.className = 'player-tag deck-vote-tag';
+    tag.style.left = '50%';
+    tag.style.top = '14%';
+    tag.textContent = '　';
+
+    const voterList = document.createElement('div');
+    voterList.className = 'vote-voter-list';
+    deckVoterNames.forEach((name) => {
+      const chip = document.createElement('span');
+      chip.className = 'vote-voter-chip';
+      chip.textContent = `👈${name}`;
+      voterList.appendChild(chip);
+    });
+    tag.appendChild(voterList);
+    wrap.appendChild(tag);
   }
 
   if(turnTarget === 'deck' && !voteSelectable){
@@ -2402,13 +2420,6 @@ function renderPlayerCircle(players){
     tag.textContent = p.name;
     tag.style.left = `${x}%`;
     tag.style.top = `${y}%`;
-
-    if(myVoteTargetId && myVoteTargetId === p.id){
-      const mail = document.createElement('span');
-      mail.className = 'vote-mail-icon';
-      mail.textContent = '✉';
-      tag.appendChild(mail);
-    }
 
     const voterNames = allVoted
       ? (votersByTarget[p.id] || [])
