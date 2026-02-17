@@ -398,6 +398,11 @@
   .my-hand-wrapper{margin-top:52px;text-align:center;}
   .my-hand-title{display:none;}
   .my-hand{display:flex;justify-content:center;gap:8px;margin-top:6px;min-height:100px;}
+  .my-hand.butler-effect-used{
+    outline:3px dashed #38bdf8;
+    outline-offset:8px;
+    border-radius:12px;
+  }
 
   /* ★ カード共通：白枠3px＋外側に黒枠1px */
   .card{
@@ -846,6 +851,10 @@ function isDiscussionTimerActive(){
 }
 function shouldPulseDeckExileCards(){
   return hasButlerInHand() && isDiscussionTimerActive() && !state.butlerExileRevealed;
+}
+function syncMyHandButlerEffectState(){
+  if(!myHandEl) return;
+  myHandEl.classList.toggle('butler-effect-used', !!state.butlerExileRevealed);
 }
 
 // DOM
@@ -1502,9 +1511,19 @@ function subscribeStartAnimation(){
   const animRef = ref(db, `rooms/${state.roomCode}/startAnimation`);
   onValue(animRef, snap => {
     const data = snap.val();
+    const excludedCards = data && Array.isArray(data.excludedCards) ? data.excludedCards.filter(Boolean) : [];
+
+    if(excludedCards.length){
+      state.startExcludedCards = excludedCards.slice(0, 2);
+      updateDeckExileTrayState();
+    }
+
     if(!hasInitializedStartAnimation){
       hasInitializedStartAnimation = true;
       lastStartAnimationId = data && data.id ? data.id : null;
+      if(excludedCards.length && latestPlayers.length){
+        renderPlayerCircle(latestPlayers);
+      }
       return;
     }
     if(!data || !data.id || data.status !== 'run') return;
@@ -1689,6 +1708,7 @@ function startPointerCardDrag(cardEl, cardIndex, ev){
 function renderMyHand(){
   cleanupPointerDragState();
   myHandEl.innerHTML = '';
+  syncMyHandButlerEffectState();
   const myId = state.userId;
   const handData = state.hands[myId];
   if (!handData || !Array.isArray(handData.cards)) return;
@@ -2081,6 +2101,7 @@ function revealButlerExileCards(){
   if(state.butlerExileRevealed) return;
   state.butlerExileRevealed = true;
   updateDeckExileTrayState();
+  syncMyHandButlerEffectState();
 }
 
 function updateDeckExileTrayState(){
@@ -2225,6 +2246,7 @@ async function animateDealCardToPlayer(playerId){
 function clearDeckExileCards(){
   state.startExcludedCards = [];
   state.butlerExileRevealed = false;
+  syncMyHandButlerEffectState();
   const deckWrap = playerCircle.querySelector('[data-role="deck"]');
   if(!deckWrap) return;
   const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
@@ -2933,6 +2955,7 @@ async function dealInitialHands(){
   state.hands = {};
   state.startExcludedCards = [];
   state.butlerExileRevealed = false;
+  syncMyHandButlerEffectState();
   renderHands();
   await wait(80);
 
