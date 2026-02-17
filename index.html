@@ -137,7 +137,7 @@
      ★ 山札（プレイヤーサークル中心）
      ========================= */
   .deck-wrap{
-    position:absolute;left:calc(50% - var(--deck-offset-x));top:70%;
+    position:absolute;left:calc(50% - var(--deck-offset-x));top:calc(70% + 5px);
     transform:translate(-50%,-50%);
     z-index:10;
     display:flex;align-items:center;justify-content:center;
@@ -331,6 +331,7 @@
     top:50%;
     transform:translateY(-50%);
     display:flex;
+    align-items:center;
     gap:8px;
     pointer-events:none;
     opacity:0;
@@ -2044,7 +2045,7 @@ function renderCenterDeck(){
       if(isFront) card.dataset.role = 'shuffle-front';
       if(isBack) card.dataset.role = 'shuffle-back';
 
-      if(isVotePhaseActive() && !isVoteLocked()){
+      if(voteSelectable){
         card.classList.add('vote-clickable');
         card.style.setProperty('--vote-tx', isFront ? '0px' : `${offset}px`);
         card.style.setProperty('--vote-ty', isFront ? '0px' : `${offset}px`);
@@ -2778,7 +2779,7 @@ function renderPlayerCircle(players){
   const meIndex = players.findIndex(p => p.id === state.userId);
   const nextPlayerId = getNextPlayerId();
   const turnTarget = getTurnTransferTarget();
-  const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  const voteSelectable = isVotePhaseActive() && !isVoteLocked() && canCurrentUserVote();
   const revealAllCards = shouldShowRevealedCards();
   const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
   const showVotedDone = hasMeVoted() && voteSelectable;
