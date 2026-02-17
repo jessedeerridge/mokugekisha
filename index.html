@@ -35,7 +35,7 @@
   /* ★ 着席ポップ */
   .seat-pop{
     position:fixed;left:50%;bottom:10px;transform:translateX(-50%);
-    background:orange;border:1px solid #eee;border-radius:12px;
+    background:#381F59;border:1px solid #eee;border-radius:12px;
     box-shadow:0 12px 28px rgba(0,0,0,.12);
     padding:10px;z-index:220;display:flex;flex-direction:column;gap:10px;min-width:280px;
   }
@@ -998,6 +998,7 @@ function getCardDescription(name){
   const label = getCardBadgeLabel(name);
   const descriptions = {
     '富豪': '投票が2票分になる。',
+    '執事': '昨夜帰った2人を知ることができる。知る場合は投票権を失う。',
     '探偵': '議論を終了し、犯人を決められる。',
     '殺人鬼': '最多票にならないようにする。',
     '共犯者': '殺人鬼を手伝う。',
