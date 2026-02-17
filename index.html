@@ -954,6 +954,9 @@ let discussionPhaseEnded = false;
 let lastRevealedVotePhaseId = null;
 let hasInitializedRoomSubscription = false;
 let hasInitializedVotePhaseSubscription = false;
+let hiddenWindowStartAt = document.hidden ? Date.now() : null;
+let hiddenWindowEndAt = null;
+let pendingHiddenCardIndex = null;
 const CARD_MOVE_SPEED_RATIO = 0.7;
 const TRANSFER_TO_DRAW_DELAY_MS = speedAdjustedMs(900);
 const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
@@ -998,7 +1001,7 @@ function getCardDescription(name){
   const label = getCardBadgeLabel(name);
   const descriptions = {
     '富豪': '投票が2票分になる。',
-    '執事': '昨夜帰った2人を知ることができる。知る場合は投票権を失う。',
+    '執事': '投票権を失う代わりに、帰った2人を知ることができる。',
     '探偵': '議論を終了し、犯人を決められる。',
     '殺人鬼': '最多票にならないようにする。',
     '共犯者': '殺人鬼を手伝う。',
@@ -1037,6 +1040,27 @@ function cssMs(name){
 function wait(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+function didEventHappenWhilePageHidden(createdAt){
+  const ts = Number(createdAt || 0);
+  if(!ts || !hiddenWindowStartAt) return false;
+  if(hiddenWindowEndAt == null){
+    return ts >= hiddenWindowStartAt;
+  }
+  return ts >= hiddenWindowStartAt && ts <= hiddenWindowEndAt;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    hiddenWindowStartAt = Date.now();
+    hiddenWindowEndAt = null;
+    return;
+  }
+  if(hiddenWindowStartAt){
+    hiddenWindowEndAt = Date.now();
+  }
+  renderHands();
+});
+
 function speedAdjustedMs(baseMs){
   return Math.round(baseMs / CARD_MOVE_SPEED_RATIO);
 }
@@ -1604,6 +1628,10 @@ function subscribeStartAnimation(){
     }
     if(!data || !data.id || data.status !== 'run') return;
     if(lastStartAnimationId === data.id) return;
+    if(document.hidden || didEventHappenWhilePageHidden(data.createdAt)){
+      lastStartAnimationId = data.id;
+      return;
+    }
 
     const hasStartedRound = Object.values(state.hands || {}).some((hand) => {
       return hand && Array.isArray(hand.cards) && hand.cards.length > 0;
@@ -1629,6 +1657,7 @@ function subscribeTransferAnimation(){
     if(!data || !data.id) return;
     if(lastTransferAnimationId === data.id) return;
     lastTransferAnimationId = data.id;
+    if(document.hidden || didEventHappenWhilePageHidden(data.createdAt)) return;
 
     (async () => {
       const isDraggingPlayer = data.fromPlayerId && state.userId && data.fromPlayerId === state.userId;
@@ -1712,14 +1741,24 @@ async function finishPointerDrag(clientX, clientY){
   if(!activePointerDrag) return;
   const { cardIndex: draggedIndex, dropTargetEl, cardEl } = activePointerDrag;
   const shouldDrop = !!dropTargetEl;
+  if(shouldDrop) pendingHiddenCardIndex = draggedIndex;
   cleanupPointerDragState({ keepSourceHidden: shouldDrop });
-  if(!shouldDrop) return;
+  if(!shouldDrop){
+    pendingHiddenCardIndex = null;
+    return;
+  }
   const transferType = dropTargetEl.dataset.transferTarget;
-  const transferred = (transferType === 'deck')
-    ? await transferCardToDeck(draggedIndex)
-    : await transferCardToNextPlayer(draggedIndex);
+  let transferred = false;
+  try {
+    transferred = (transferType === 'deck')
+      ? await transferCardToDeck(draggedIndex)
+      : await transferCardToNextPlayer(draggedIndex);
+  } finally {
+    pendingHiddenCardIndex = null;
+  }
   if(!transferred && cardEl){
     cardEl.classList.remove('pointer-dragging-source');
+    renderHands();
   }
 }
 
@@ -1805,6 +1844,10 @@ function renderMyHand(){
     card.appendChild(img);
     appendCardNameBadge(card, name);
     appendCardDescription(card, name);
+
+    if(idx === pendingHiddenCardIndex){
+      card.classList.add('pointer-dragging-source');
+    }
 
     if(canTransfer){
       card.style.cursor = 'grab';
