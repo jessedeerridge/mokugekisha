@@ -3038,6 +3038,42 @@ function renderPlayerCircle(players){
   });
 }
 
+function remapVoteMapPlayerId(votes, fromPlayerId, toPlayerId){
+  const src = votes && typeof votes === 'object' ? votes : {};
+  const remapped = {};
+  Object.entries(src).forEach(([voterId, targetId]) => {
+    const nextVoterId = (voterId === fromPlayerId) ? toPlayerId : voterId;
+    const nextTargetId = (targetId === fromPlayerId) ? toPlayerId : targetId;
+    remapped[nextVoterId] = nextTargetId;
+  });
+  return remapped;
+}
+
+function remapVotePhasePlayerId(votePhase, fromPlayerId, toPlayerId){
+  if(!votePhase || typeof votePhase !== 'object') return votePhase;
+
+  const next = { ...votePhase };
+  if(Array.isArray(next.maxTargetIds)){
+    next.maxTargetIds = next.maxTargetIds.map((id) => (id === fromPlayerId ? toPlayerId : id));
+  }
+  if(Array.isArray(next.maxPlayerIds)){
+    next.maxPlayerIds = next.maxPlayerIds.map((id) => (id === fromPlayerId ? toPlayerId : id));
+  }
+  if(next.maxTargetId === fromPlayerId) next.maxTargetId = toPlayerId;
+  if(next.maxPlayerId === fromPlayerId) next.maxPlayerId = toPlayerId;
+
+  if(next.counts && typeof next.counts === 'object'){
+    const remappedCounts = {};
+    Object.entries(next.counts).forEach(([targetId, count]) => {
+      const nextTargetId = (targetId === fromPlayerId) ? toPlayerId : targetId;
+      remappedCounts[nextTargetId] = Number(remappedCounts[nextTargetId] || 0) + Number(count || 0);
+    });
+    next.counts = remappedCounts;
+  }
+
+  return next;
+}
+
 // ========= 追い出し =========
 kickDialog.addEventListener('click', (e) => {
   if (e.target === kickDialog) {
@@ -3060,16 +3096,40 @@ btnKickYes.addEventListener('click', async (e) => {
   }
 
   const seatIndex = pendingSeatIndexToSteal;
+  const kickedPlayerId = pendingSeatPlayerIdToSteal;
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   const roomSnap = await get(roomRef);
   const roomData = roomSnap.val() || {};
 
-  const tRef = ref(db, `rooms/${state.roomCode}/tables/${seatIndex}`);
-  await set(tRef, { playerId: state.userId, playerName: state.userName || '名無し' });
+  const patch = {
+    [`rooms/${state.roomCode}/tables/${seatIndex}`]: { playerId: state.userId, playerName: state.userName || '名無し' }
+  };
 
-  if (roomData.hostId && pendingSeatPlayerIdToSteal && roomData.hostId === pendingSeatPlayerIdToSteal) {
-    await update(roomRef, { hostId: state.userId });
+  if(roomData.hostId && kickedPlayerId && roomData.hostId === kickedPlayerId){
+    patch[`rooms/${state.roomCode}/hostId`] = state.userId;
   }
+
+  if(kickedPlayerId){
+    const kickedHands = roomData.hands && roomData.hands[kickedPlayerId];
+    if(kickedHands){
+      patch[`rooms/${state.roomCode}/hands/${state.userId}`] = kickedHands;
+      patch[`rooms/${state.roomCode}/hands/${kickedPlayerId}`] = null;
+    }
+
+    if(roomData.butlerEffectUsedBy && Object.prototype.hasOwnProperty.call(roomData.butlerEffectUsedBy, kickedPlayerId)){
+      patch[`rooms/${state.roomCode}/butlerEffectUsedBy/${state.userId}`] = !!roomData.butlerEffectUsedBy[kickedPlayerId];
+      patch[`rooms/${state.roomCode}/butlerEffectUsedBy/${kickedPlayerId}`] = null;
+    }
+
+    if(roomData.startPlayerId === kickedPlayerId){
+      patch[`rooms/${state.roomCode}/startPlayerId`] = state.userId;
+    }
+
+    patch[`rooms/${state.roomCode}/votes`] = remapVoteMapPlayerId(roomData.votes, kickedPlayerId, state.userId);
+    patch[`rooms/${state.roomCode}/votePhase`] = remapVotePhasePlayerId(roomData.votePhase, kickedPlayerId, state.userId);
+  }
+
+  await update(ref(db), patch);
 
   state.seatedTable = seatIndex;
 
