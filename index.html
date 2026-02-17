@@ -201,7 +201,8 @@
   }
   .shuffle-card.vote-clickable,
   .mini-card.vote-clickable,
-  .card.vote-clickable{
+  .card.vote-clickable,
+  .deck-exile-card.vote-clickable{
     cursor:pointer;
     animation:votePulse 1.05s ease-in-out infinite;
   }
@@ -336,6 +337,9 @@
   }
   .deck-exile-tray.visible{
     opacity:1;
+  }
+  .deck-exile-tray.vote-clickable{
+    pointer-events:auto;
   }
   .deck-exile-card{
     width:calc(54px * var(--mini-zone-scale));
@@ -816,7 +820,8 @@ const state = {
   startAnimation: null,
   startExcludedCards: [],
   votePhase: null,
-  votes: {}
+  votes: {},
+  butlerExileRevealed: false
 };
 
 function shouldShowRevealedCards(){
@@ -825,6 +830,22 @@ function shouldShowRevealedCards(){
 function getCenterRevealCardName(){
   const deck = Array.isArray(state.deck) ? state.deck : [];
   return deck.length ? deck[deck.length - 1] : null;
+}
+function hasButlerInHand(){
+  const handData = state.hands && state.hands[state.userId];
+  const cards = handData && Array.isArray(handData.cards) ? handData.cards : [];
+  return cards.includes('執事');
+}
+function isDiscussionTimerActive(){
+  const phase = state.room && state.room.discussionPhase;
+  if(!phase || !phase.id) return false;
+  const startedAt = Number(phase.startedAt || 0);
+  const durationSec = Number(phase.durationSec || getDiscussionDurationSec());
+  if(!startedAt || durationSec <= 0) return false;
+  return Date.now() < (startedAt + durationSec * 1000);
+}
+function shouldPulseDeckExileCards(){
+  return hasButlerInHand() && isDiscussionTimerActive() && !state.butlerExileRevealed;
 }
 
 // DOM
@@ -1352,6 +1373,8 @@ function runDiscussionTimer(startedAtMs, durationSec, options = {}){
         });
       }
     }
+
+    updateDeckExileTrayState();
   };
 
   tick();
@@ -1930,17 +1953,26 @@ function renderCenterDeck(){
 
   const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
   const revealAllCards = shouldShowRevealedCards();
+  const shouldPulseExile = shouldPulseDeckExileCards();
+  const showExileFace = revealAllCards || state.butlerExileRevealed;
   excludedCards.forEach((name) => {
     const card = document.createElement('div');
-    card.className = 'deck-exile-card';
+    card.className = `deck-exile-card${shouldPulseExile ? ' vote-clickable' : ''}`;
+    if(shouldPulseExile){
+      card.style.setProperty('--vote-tx', '0px');
+      card.style.setProperty('--vote-ty', '0px');
+      card.style.setProperty('--vote-rot', '0deg');
+      card.addEventListener('click', revealButlerExileCards);
+    }
     const img = document.createElement('img');
     img.alt = `除外カード:${name}`;
-    img.src = revealAllCards ? cardImg(name) : BACK_IMG;
+    img.src = showExileFace ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
     exileTray.appendChild(card);
   });
   if(excludedCards.length) exileTray.classList.add('visible');
+  if(shouldPulseExile) exileTray.classList.add('vote-clickable');
 
   wrap.appendChild(exileTray);
 
@@ -2043,6 +2075,44 @@ function renderCenterDeck(){
   }
 
   playerCircle.appendChild(wrap);
+}
+
+function revealButlerExileCards(){
+  if(state.butlerExileRevealed) return;
+  state.butlerExileRevealed = true;
+  updateDeckExileTrayState();
+}
+
+function updateDeckExileTrayState(){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+  const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
+  if(!tray) return;
+
+  const revealAllCards = shouldShowRevealedCards();
+  const shouldPulseExile = shouldPulseDeckExileCards();
+  const showExileFace = revealAllCards || state.butlerExileRevealed;
+  tray.classList.toggle('vote-clickable', shouldPulseExile);
+
+  tray.querySelectorAll('.deck-exile-card').forEach((cardEl) => {
+    cardEl.classList.toggle('vote-clickable', shouldPulseExile);
+    if(shouldPulseExile){
+      cardEl.style.setProperty('--vote-tx', '0px');
+      cardEl.style.setProperty('--vote-ty', '0px');
+      cardEl.style.setProperty('--vote-rot', '0deg');
+      cardEl.onclick = revealButlerExileCards;
+    } else {
+      cardEl.style.removeProperty('--vote-tx');
+      cardEl.style.removeProperty('--vote-ty');
+      cardEl.style.removeProperty('--vote-rot');
+      cardEl.onclick = null;
+    }
+
+    const img = cardEl.querySelector('img');
+    if(!img) return;
+    const cardName = (img.alt || '').replace(/^除外カード:/, '');
+    img.src = showExileFace && cardName ? cardImg(cardName) : BACK_IMG;
+  });
 }
 
 function getDealTargetPoint(playerId){
@@ -2154,6 +2224,7 @@ async function animateDealCardToPlayer(playerId){
 
 function clearDeckExileCards(){
   state.startExcludedCards = [];
+  state.butlerExileRevealed = false;
   const deckWrap = playerCircle.querySelector('[data-role="deck"]');
   if(!deckWrap) return;
   const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
@@ -2183,6 +2254,7 @@ function appendDeckExileCard(cardName){
   card.appendChild(img);
   tray.appendChild(card);
   tray.classList.add('visible');
+  updateDeckExileTrayState();
 }
 
 async function animateExileCardFromDeck(cardName){
@@ -2598,6 +2670,7 @@ async function runStartAnimation(animData){
   const drawnCards = Array.isArray(animData.drawnCards) ? animData.drawnCards : [];
   const excludedCards = Array.isArray(animData.excludedCards) ? animData.excludedCards : [];
   state.startExcludedCards = [];
+  state.butlerExileRevealed = false;
 
   try {
     const ready = await waitForAnimationLayout(startPlayerId);
@@ -2859,6 +2932,7 @@ async function dealInitialHands(){
   await update(ref(db), resetPatch);
   state.hands = {};
   state.startExcludedCards = [];
+  state.butlerExileRevealed = false;
   renderHands();
   await wait(80);
 
