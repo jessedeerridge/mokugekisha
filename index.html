@@ -3240,6 +3240,8 @@ async function dealInitialHands(){
   patch[`rooms/${state.roomCode}/hands`] = hands;
   patch[`rooms/${state.roomCode}/deck`]  = deck;
   patch[`rooms/${state.roomCode}/startPlayerId`] = startPlayerId;
+  patch[`rooms/${state.roomCode}/startAnimation/status`] = 'done';
+  patch[`rooms/${state.roomCode}/startAnimation/finishedAt`] = Date.now();
   await update(ref(db), patch);
 }
 
