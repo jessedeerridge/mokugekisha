@@ -3073,12 +3073,13 @@ async function dealInitialHands(){
   resetPatch[`${base}/votePhase`] = null;
   resetPatch[`${base}/votes`] = {};
   resetPatch[`${base}/butlerEffectUsedBy`] = {};
-  await update(ref(db), resetPatch);
   state.hands = {};
   state.startExcludedCards = [];
   state.butlerExileRevealed = false;
+  state.butlerEffectUsedBy = {};
   syncMyHandButlerEffectState();
   renderHands();
+  await update(ref(db), resetPatch);
   await wait(80);
 
   let deck = shuffle(enabledCards);
