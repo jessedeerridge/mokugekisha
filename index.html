@@ -334,6 +334,11 @@
     pointer-events:none;
     opacity:0;
   }
+  .deck-exile-tray.butler-clickable{
+    pointer-events:auto;
+    cursor:pointer;
+    animation:votePulse 1.05s ease-in-out infinite;
+  }
   .deck-exile-tray.visible{
     opacity:1;
   }
@@ -468,6 +473,14 @@
     display:block;
     transform: scale(1.1);
     transform-origin: center;
+  }
+  .card.butler-used-outline::after{
+    content:'';
+    position:absolute;
+    inset:-7px;
+    border:2px dashed #2563eb;
+    border-radius:14px;
+    pointer-events:none;
   }
   .pointer-drag-ghost{
     position:fixed;
@@ -816,7 +829,8 @@ const state = {
   startAnimation: null,
   startExcludedCards: [],
   votePhase: null,
-  votes: {}
+  votes: {},
+  localButlerPeekPhaseId: null
 };
 
 function shouldShowRevealedCards(){
@@ -937,6 +951,7 @@ function getCardDescription(name){
     '殺人鬼': '最多票にならなければ勝ち。',
     '共犯者': '殺人鬼を手伝う。',
     '弁護士': '投票したプレイヤーの票を無効化する。',
+    '執事': '議論中に除外札2枚を確認。使うと投票不可・手札公開。',
     '爆弾魔': '最多票になれば勝ち。',
     '客人': '殺人鬼を見つける。'
   };
@@ -991,7 +1006,49 @@ function getDiscussionDurationSec(){
 function getActivePlayerIds(){
   return latestPlayers.map((p) => p.id);
 }
+function getDiscussionPhaseId(){
+  return state.room && state.room.discussionPhase && state.room.discussionPhase.id
+    ? state.room.discussionPhase.id
+    : null;
+}
+function isDiscussionPhaseActiveNow(){
+  const phase = state.room && state.room.discussionPhase;
+  if(!phase || !phase.id) return false;
+  const startedAt = Number(phase.startedAt || 0);
+  const durationSec = Number(phase.durationSec || getDiscussionDurationSec());
+  if(!startedAt || !Number.isFinite(durationSec) || durationSec <= 0) return false;
+  return Date.now() < startedAt + durationSec * 1000;
+}
+function getButlerUsedMap(){
+  return (state.room && state.room.butlerEffects) || {};
+}
+function hasButlerEffectUsed(playerId, phaseId = null){
+  if(!playerId) return false;
+  const usePhaseId = phaseId || getDiscussionPhaseId() || (state.votePhase && state.votePhase.id) || null;
+  if(!usePhaseId) return false;
+  return !!(getButlerUsedMap()[usePhaseId] && getButlerUsedMap()[usePhaseId][playerId]);
+}
+function playerHasCard(playerId, cardName){
+  const hand = state.hands && state.hands[playerId];
+  const cards = hand && Array.isArray(hand.cards) ? hand.cards : [];
+  return cards.includes(cardName);
+}
+function canUseMyButlerEffect(){
+  const phaseId = getDiscussionPhaseId();
+  if(!phaseId) return false;
+  if(!isDiscussionPhaseActiveNow()) return false;
+  if(!playerHasCard(state.userId, '執事')) return false;
+  return !hasButlerEffectUsed(state.userId, phaseId);
+}
+function canPlayerVote(playerId){
+  if(!playerId) return false;
+  const playerIds = getActivePlayerIds();
+  if(!playerIds.includes(playerId)) return false;
+  if(!state.votePhase || !state.votePhase.id) return true;
+  return !hasButlerEffectUsed(playerId, state.votePhase.id);
+}
 function hasMeVoted(){
+  if(!canPlayerVote(state.userId)) return false;
   return !!(state.userId && state.votes && state.votes[state.userId]);
 }
 function isVotePhaseActive(){
@@ -1001,7 +1058,7 @@ function isVoteLocked(){
   return !!(state.votePhase && state.votePhase.status === 'revealed');
 }
 function areAllPlayersVoted(){
-  const playerIds = getActivePlayerIds();
+  const playerIds = getActivePlayerIds().filter((id) => canPlayerVote(id));
   if(!playerIds.length) return false;
   return playerIds.every((id) => !!(state.votes && state.votes[id]));
 }
@@ -1011,6 +1068,7 @@ function getVoteCounts(){
   counts.__DECK__ = 0;
   const invalidatedVoterIds = getLawyerInvalidatedVoterIds();
   Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
+    if(!canPlayerVote(voterId)) return;
     if(typeof targetId !== 'string') return;
     if(counts[targetId] == null) counts[targetId] = 0;
     counts[targetId] += getVoterWeight(voterId, invalidatedVoterIds);
@@ -1041,6 +1099,7 @@ function getVoteVotersByTarget(){
   const voters = {};
   const invalidatedVoterIds = getLawyerInvalidatedVoterIds();
   Object.entries(state.votes || {}).forEach(([voterId, targetId]) => {
+    if(!canPlayerVote(voterId)) return;
     if(typeof targetId !== 'string') return;
     if(!voters[targetId]) voters[targetId] = [];
     voters[targetId].push({
@@ -1054,6 +1113,7 @@ function getVoteVotersByTarget(){
 async function submitVote(targetId){
   if(!state.roomCode || !state.userId) return;
   if(!isVotePhaseActive() || isVoteLocked()) return;
+  if(!canPlayerVote(state.userId)) return;
   const isDeckTarget = targetId === "__DECK__";
   const isPlayerTarget = latestPlayers.some((p) => p.id === targetId);
   if(!isDeckTarget && !isPlayerTarget) return;
@@ -1335,6 +1395,7 @@ function runDiscussionTimer(startedAtMs, durationSec, options = {}){
     const remainMs = Math.max(0, endMs - Date.now());
     const remainSec = Math.ceil(remainMs / 1000);
     discussionTimerInner.textContent = formatTimerText(remainSec);
+    renderHands();
 
     if(remainMs <= 0 && !discussionPhaseEnded){
       discussionPhaseEnded = true;
@@ -1362,18 +1423,35 @@ function syncDiscussionPhase(data, options = {}){
   if(!data || !data.id){
     lastDiscussionPhaseId = null;
     discussionPhaseEnded = false;
+    state.localButlerPeekPhaseId = null;
     clearDiscussionTimer();
     return;
   }
 
   if(lastDiscussionPhaseId === data.id) return;
   lastDiscussionPhaseId = data.id;
+  if(state.localButlerPeekPhaseId !== data.id) state.localButlerPeekPhaseId = null;
   if(!options.suppressAnnounce){
     showAnnouncePop('議論開始！');
   }
   runDiscussionTimer(data.startedAt, data.durationSec, {
     skipExpiredTransition: !!options.suppressAnnounce
   });
+}
+
+async function useButlerEffect(){
+  if(!state.roomCode || !state.userId) return;
+  const phaseId = getDiscussionPhaseId();
+  if(!phaseId) return;
+  if(!canUseMyButlerEffect()) return;
+
+  await update(ref(db), {
+    [`rooms/${state.roomCode}/butlerEffects/${phaseId}/${state.userId}`]: {
+      usedAt: Date.now()
+    }
+  });
+  state.localButlerPeekPhaseId = phaseId;
+  renderHands();
 }
 
 // ========= Firebase subscribe =========
@@ -1672,6 +1750,7 @@ function renderMyHand(){
 
   const voteSelectable = isVotePhaseActive() && !isVoteLocked();
   const canTransfer = !voteSelectable && handData.cards.length === 2 && !!getTurnTransferTarget();
+  const butlerUsedByMe = hasButlerEffectUsed(state.userId);
 
   handData.cards.forEach((name, idx) => {
     const card = document.createElement('div');
@@ -1686,6 +1765,7 @@ function renderMyHand(){
     card.appendChild(img);
     appendCardNameBadge(card, name);
     appendCardDescription(card, name);
+    if(butlerUsedByMe) card.classList.add('butler-used-outline');
 
     if(canTransfer){
       card.style.cursor = 'grab';
@@ -1929,23 +2009,33 @@ function renderCenterDeck(){
   exileTray.dataset.role = 'deck-exile-tray';
 
   const excludedCards = Array.isArray(state.startExcludedCards) ? state.startExcludedCards : [];
+  const discussionPhaseId = getDiscussionPhaseId();
+  const canUseButler = canUseMyButlerEffect();
   const revealAllCards = shouldShowRevealedCards();
+  const shouldRevealExileForMe = shouldShowRevealedCards()
+    || (discussionPhaseId && state.localButlerPeekPhaseId === discussionPhaseId)
+    || hasButlerEffectUsed(state.userId, discussionPhaseId);
   excludedCards.forEach((name) => {
     const card = document.createElement('div');
     card.className = 'deck-exile-card';
     const img = document.createElement('img');
     img.alt = `除外カード:${name}`;
-    img.src = revealAllCards ? cardImg(name) : BACK_IMG;
+    img.src = shouldRevealExileForMe ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
     exileTray.appendChild(card);
   });
   if(excludedCards.length) exileTray.classList.add('visible');
+  if(canUseButler && excludedCards.length){
+    exileTray.classList.add('butler-clickable');
+    exileTray.addEventListener('click', useButlerEffect, { once: true });
+  }
 
   wrap.appendChild(exileTray);
 
   const turnTarget = getTurnTransferTarget();
   const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  const canVoteByMe = voteSelectable && canPlayerVote(state.userId);
   if(turnTarget === 'deck' && !voteSelectable){
     wrap.classList.add('next-turn-target');
     wrap.dataset.dropTarget = 'active';
@@ -1973,7 +2063,7 @@ function renderCenterDeck(){
       if(isFront) card.dataset.role = 'shuffle-front';
       if(isBack) card.dataset.role = 'shuffle-back';
 
-      if(isVotePhaseActive() && !isVoteLocked()){
+      if(canVoteByMe){
         card.classList.add('vote-clickable');
         card.style.setProperty('--vote-tx', isFront ? '0px' : `${offset}px`);
         card.style.setProperty('--vote-ty', isFront ? '0px' : `${offset}px`);
@@ -2656,6 +2746,7 @@ function renderPlayerCircle(players){
   const nextPlayerId = getNextPlayerId();
   const turnTarget = getTurnTransferTarget();
   const voteSelectable = isVotePhaseActive() && !isVoteLocked();
+  const canVoteByMe = voteSelectable && canPlayerVote(state.userId);
   const revealAllCards = shouldShowRevealedCards();
   const myVoteTargetId = state.votes && state.userId ? state.votes[state.userId] : null;
   const showVotedDone = hasMeVoted() && voteSelectable;
@@ -2697,7 +2788,7 @@ function renderPlayerCircle(players){
     }
 
     tag.onclick = () => {
-      if(voteSelectable){
+      if(canVoteByMe){
         if(p.id !== state.userId) submitVote(p.id);
         return;
       }
@@ -2750,11 +2841,13 @@ function renderPlayerCircle(players){
         card.className = 'mini-card';
 
         const img = document.createElement('img');
-        img.alt = revealAllCards ? cardName : '裏面';
-        img.src = revealAllCards ? cardImg(cardName) : BACK_IMG;
+        const revealByButler = hasButlerEffectUsed(p.id);
+        const showFace = revealAllCards || revealByButler;
+        img.alt = showFace ? cardName : '裏面';
+        img.src = showFace ? cardImg(cardName) : BACK_IMG;
         img.loading = 'lazy';
         card.appendChild(img);
-        if(revealAllCards){
+        if(showFace){
           appendCardNameBadge(card, cardName);
           appendCardDescription(card, cardName);
         }
@@ -2765,14 +2858,14 @@ function renderPlayerCircle(players){
         card.style.setProperty('--vote-rot', `${angleDeg}deg`);
         card.style.transform = `translate(-50%,0) rotate(${angleDeg}deg)`;
         card.style.zIndex = String(10 + idx2);
-        if(voteSelectable){
+        if(canVoteByMe){
           card.classList.add('vote-clickable');
           card.addEventListener('click', () => submitVote(p.id));
         }
         miniHand.appendChild(card);
       });
 
-      if(voteSelectable && count === 0){
+      if(canVoteByMe && count === 0){
         miniHand.classList.add('vote-clickable');
         miniHand.addEventListener('click', () => submitVote(p.id));
       }
@@ -2856,9 +2949,11 @@ async function dealInitialHands(){
   resetPatch[`${base}/discussionPhase`] = null;
   resetPatch[`${base}/votePhase`] = null;
   resetPatch[`${base}/votes`] = {};
+  resetPatch[`${base}/butlerEffects`] = {};
   await update(ref(db), resetPatch);
   state.hands = {};
   state.startExcludedCards = [];
+  state.localButlerPeekPhaseId = null;
   renderHands();
   await wait(80);
 
@@ -2951,6 +3046,7 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/discussionPhase`)),
     remove(ref(db, `${base}/votePhase`)),
     remove(ref(db, `${base}/votes`)),
+    remove(ref(db, `${base}/butlerEffects`)),
     // deckConfig は残しても良いが、要望が「戻す」なので消す（次回ホストが初期化）
     remove(ref(db, `${base}/deckConfig`)),
   ]);
