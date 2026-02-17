@@ -171,6 +171,7 @@
     --zone-circle-size:96px;
     --mini-zone-scale:0.9;
     --deck-offset-x:18px;
+    --help-card-scale:1.4;
   }
   .shuffle-deck{
     position:relative;
@@ -180,6 +181,7 @@
     transform-origin:center;
   }
   .shuffle-card{
+    --card-ui-scale:0.9;
     position:absolute;
     inset:0;
     width:54px;height:81px;border-radius:10px;
@@ -286,6 +288,7 @@
   }
 
   .deal-fly-card{
+    --card-ui-scale:0.9;
     position:fixed;
     width:54px;
     height:81px;
@@ -304,6 +307,7 @@
     transform:scale(1.05);
   }
   .deal-fly-card.deck-size{
+    --card-ui-scale:calc(0.9 * var(--mini-zone-scale));
     width:calc(54px * var(--mini-zone-scale));
     height:calc(81px * var(--mini-zone-scale));
     border-radius:calc(10px * var(--mini-zone-scale));
@@ -343,6 +347,8 @@
     pointer-events:auto;
   }
   .deck-exile-card{
+    --card-ui-scale:calc(0.9 * var(--mini-zone-scale));
+    position:relative;
     width:calc(54px * var(--mini-zone-scale));
     height:calc(81px * var(--mini-zone-scale));
     border-radius:10px;
@@ -372,6 +378,7 @@
     pointer-events:auto;
   }
   .player-tag .mini-card{
+    --card-ui-scale:0.9;
     pointer-events:none;
     position:absolute;left:50%;top:8px;
     width:54px;height:81px;
@@ -423,6 +430,7 @@
 
   /* ★ カード共通：白枠3px＋外側に黒枠1px */
   .card{
+    --card-ui-scale:1;
     position:relative;
     width:60px;height:90px;border-radius:10px;
     border:3px solid #fff;
@@ -436,19 +444,19 @@
   }
   .card-name-badge{
     position:absolute;
-    top:2px;
-    left:2px;
+    top:calc(2px * var(--card-ui-scale, 1));
+    left:calc(2px * var(--card-ui-scale, 1));
     writing-mode:vertical-rl;
     text-orientation:upright;
-    font-size:12px;
+    font-size:calc(12px * var(--card-ui-scale, 1));
     line-height:1;
     font-weight:700;
-    letter-spacing:1px;
+    letter-spacing:calc(1px * var(--card-ui-scale, 1));
     color:#111;
     background:rgba(255,255,255,.9);
-    border:2px solid #dc2626;
+    border:calc(2px * var(--card-ui-scale, 1)) solid #dc2626;
     border-radius:0;
-    padding:2px 1px;
+    padding:calc(2px * var(--card-ui-scale, 1)) calc(1px * var(--card-ui-scale, 1));
     pointer-events:none;
     z-index:2;
   }
@@ -459,16 +467,16 @@
   }
   .card-desc-box{
     position:absolute;
-    left:3px;
-    right:3px;
-    bottom:3px;
-    min-height:20px;
-    padding:2px 4px;
+    left:calc(3px * var(--card-ui-scale, 1));
+    right:calc(3px * var(--card-ui-scale, 1));
+    bottom:calc(3px * var(--card-ui-scale, 1));
+    min-height:calc(20px * var(--card-ui-scale, 1));
+    padding:calc(2px * var(--card-ui-scale, 1)) calc(4px * var(--card-ui-scale, 1));
     border-radius:0;
-    border:1px solid rgba(17,17,17,.75);
+    border:calc(1px * var(--card-ui-scale, 1)) solid rgba(17,17,17,.75);
     background:rgba(255,255,255,.65);
     color:#111;
-    font-size:8px;
+    font-size:calc(8px * var(--card-ui-scale, 1));
     line-height:1.25;
     font-weight:700;
     z-index:2;
@@ -582,13 +590,16 @@
   .help-grid{
     display:grid;
     grid-template-columns: repeat(4, 1fr);
-    gap:10px;
+    column-gap:10px;
+    row-gap:18px;
   }
   .help-grid .card{
-    width:100%;
-    max-width:84px;
-    height:auto;
-    aspect-ratio:2 / 3;
+    width:60px;
+    height:90px;
+    max-width:none;
+    aspect-ratio:auto;
+    transform:scale(var(--help-card-scale));
+    transform-origin:center;
   }
   .help-item{
     display:flex;
@@ -596,6 +607,7 @@
     align-items:center;
     justify-content:center;
     cursor:default;
+    min-height:calc(90px * var(--help-card-scale));
   }
   .help-item.host-clickable{cursor:pointer;}
   .help-item.disabled{opacity:.25;}
@@ -762,7 +774,7 @@
 <div id="helpBackdrop" class="help-pop-backdrop hidden">
   <div class="help-pop" role="dialog" aria-modal="true" aria-label="カード一覧">
     <div class="help-pop-header">
-      <div class="help-pop-title">カード一覧（濃い＝デッキ投入）</div>
+      <div class="help-pop-title">カード一覧</div>
       <button id="btnHelpClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
     </div>
     <div class="help-pop-body" id="helpBody"></div>
@@ -1002,7 +1014,7 @@ function getCardDescription(name){
     '富豪': '投票が2票分になる。',
     '執事': '投票権を失う代わりに、帰った2人を知れる。',
     '探偵': '議論を終了し、犯人を決められる。',
-    '殺人鬼': '最多票にならないようにする。',
+    '殺人鬼': 'ばれないようにする。',
     '共犯者': '殺人鬼を手伝う。',
     '弁護士': '投票したプレイヤーの票を無効化する。',
     '爆弾魔': '最多票になるようにふるまう。',
@@ -1029,6 +1041,13 @@ function appendCardDescription(cardEl, name){
   descBox.className = 'card-desc-box';
   descBox.textContent = desc;
   cardEl.appendChild(descBox);
+}
+function syncCardNameAndDescription(cardEl, name, showFace){
+  if(!cardEl) return;
+  cardEl.querySelectorAll(':scope > .card-name-badge, :scope > .card-desc-box').forEach((el) => el.remove());
+  if(!showFace || !name) return;
+  appendCardNameBadge(cardEl, name);
+  appendCardDescription(cardEl, name);
 }
 function cssMs(name){
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -2093,6 +2112,7 @@ function renderCenterDeck(){
     img.src = showExileFace ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
+    syncCardNameAndDescription(card, name, showExileFace);
     exileTray.appendChild(card);
   });
   if(excludedCards.length) exileTray.classList.add('visible');
@@ -2143,6 +2163,7 @@ function renderCenterDeck(){
       img.src = revealAllCards && deckCardName ? cardImg(deckCardName) : BACK_IMG;
       img.loading = 'lazy';
       card.appendChild(img);
+      syncCardNameAndDescription(card, deckCardName, revealAllCards);
       shuffleDeck.appendChild(card);
     }
 
@@ -2246,6 +2267,7 @@ function updateDeckExileTrayState(){
     if(!img) return;
     const cardName = (img.alt || '').replace(/^除外カード:/, '');
     img.src = showExileFace && cardName ? cardImg(cardName) : BACK_IMG;
+    syncCardNameAndDescription(cardEl, cardName, showExileFace);
   });
 }
 
@@ -2445,6 +2467,7 @@ async function animateKillerPeekFromDeck(){
   img.alt = '殺人鬼カード';
   img.src = cardImg('殺人鬼');
   fly.appendChild(img);
+  syncCardNameAndDescription(fly, '殺人鬼', true);
 
   fly.style.left = `${from.x}px`;
   fly.style.top = `${from.y}px`;
@@ -2965,10 +2988,7 @@ function renderPlayerCircle(players){
         img.src = revealPlayerCards ? cardImg(cardName) : BACK_IMG;
         img.loading = 'lazy';
         card.appendChild(img);
-        if(revealPlayerCards){
-          appendCardNameBadge(card, cardName);
-          appendCardDescription(card, cardName);
-        }
+        syncCardNameAndDescription(card, cardName, revealPlayerCards);
 
         const angleDeg = (count > 1) ? base + (spread/(count-1))*idx2 : 0;
         card.style.setProperty('--vote-tx', '-50%');
