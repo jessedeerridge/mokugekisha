@@ -378,7 +378,7 @@
     pointer-events:auto;
   }
   .player-tag .mini-card{
-    --card-ui-scale:0.9;
+    --card-ui-scale:0.82;
     pointer-events:none;
     position:absolute;left:50%;top:8px;
     width:54px;height:81px;
@@ -594,12 +594,11 @@
     row-gap:18px;
   }
   .help-grid .card{
-    width:60px;
-    height:90px;
+    --card-ui-scale:var(--help-card-scale);
+    width:calc(60px * var(--help-card-scale));
+    height:calc(90px * var(--help-card-scale));
     max-width:none;
     aspect-ratio:auto;
-    transform:scale(var(--help-card-scale));
-    transform-origin:center;
   }
   .help-item{
     display:flex;
