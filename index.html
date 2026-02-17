@@ -1000,7 +1000,7 @@ function getCardDescription(name){
   const label = getCardBadgeLabel(name);
   const descriptions = {
     '富豪': '投票が2票分になる。',
-    '執事': '昨夜帰った2人を知ることができる。知る場合は投票権を失う。',
+    '執事': '投票権を失う代わりに、帰った2人を知れる。',
     '探偵': '議論を終了し、犯人を決められる。',
     '殺人鬼': '最多票にならないようにする。',
     '共犯者': '殺人鬼を手伝う。',
@@ -2664,6 +2664,13 @@ async function transferCardToDeck(cardIndex){
     const myFinal = myHand.filter((_, i) => i !== cardIndex);
     const nextDeck = Array.isArray(state.deck) ? [...state.deck, movingCard] : [movingCard];
 
+    state.hands = {
+      ...state.hands,
+      [state.userId]: { cards: myFinal }
+    };
+    state.deck = nextDeck;
+    renderHands();
+
     const transferAnimId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await update(ref(db), {
       [`rooms/${state.roomCode}/transferAnimation`]: {
@@ -2679,13 +2686,6 @@ async function transferCardToDeck(cardIndex){
     });
 
     await wait(TRANSFER_TO_DECK_SYNC_DELAY_MS);
-
-    state.hands = {
-      ...state.hands,
-      [state.userId]: { cards: myFinal }
-    };
-    state.deck = nextDeck;
-    renderHands();
 
     await update(ref(db), {
       [`rooms/${state.roomCode}/hands/${state.userId}/cards`]: myFinal,
