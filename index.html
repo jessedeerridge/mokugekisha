@@ -345,6 +345,7 @@
     box-shadow:0 0 0 1px #000, 0 4px 12px rgba(0,0,0,.2);
     background:#fff;
     overflow:hidden;
+    transform-origin:center;
   }
   .deck-exile-card img{
     width:100%;
@@ -352,6 +353,12 @@
     object-fit:cover;
     display:block;
     transform:scale(1.05);
+  }
+  .deck-exile-card.discussion-pulse{
+    --vote-tx: 0px;
+    --vote-ty: 0px;
+    --vote-rot: 0deg;
+    animation:votePulse 1.05s ease-in-out infinite;
   }
 
   /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
@@ -988,6 +995,33 @@ function getDiscussionDurationSec(){
   const sec = Number(state.room && state.room.discussionDurationSec);
   return Number.isFinite(sec) && sec > 0 ? sec : DEFAULT_DISCUSSION_DURATION_SEC;
 }
+function isDiscussionCountdownActive(){
+  const phase = state.room && state.room.discussionPhase;
+  if(!phase || !phase.id) return false;
+  const startedAt = Number(phase.startedAt || 0);
+  if(!Number.isFinite(startedAt) || startedAt <= 0) return false;
+  const durationSec = Number(phase.durationSec) > 0 ? Number(phase.durationSec) : getDiscussionDurationSec();
+  return Date.now() < (startedAt + durationSec * 1000);
+}
+function hasButlerInHand(playerId = state.userId){
+  if(!playerId) return false;
+  const hand = state.hands && state.hands[playerId];
+  const cards = hand && Array.isArray(hand.cards) ? hand.cards : [];
+  return cards.includes('執事');
+}
+function shouldPulseExileCards(){
+  return hasButlerInHand() && isDiscussionCountdownActive();
+}
+function applyDeckExilePulseState(){
+  const deckWrap = playerCircle.querySelector('[data-role="deck"]');
+  if(!deckWrap) return;
+  const tray = deckWrap.querySelector('[data-role="deck-exile-tray"]');
+  if(!tray) return;
+  const pulse = shouldPulseExileCards();
+  tray.querySelectorAll('.deck-exile-card').forEach((card) => {
+    card.classList.toggle('discussion-pulse', pulse);
+  });
+}
 function getActivePlayerIds(){
   return latestPlayers.map((p) => p.id);
 }
@@ -1311,6 +1345,7 @@ function clearDiscussionTimer(){
   }
   discussionTimer.classList.remove('visible');
   discussionTimerInner.textContent = formatTimerText(getDiscussionDurationSec());
+  applyDeckExilePulseState();
 }
 
 function formatTimerText(totalSec){
@@ -1335,6 +1370,7 @@ function runDiscussionTimer(startedAtMs, durationSec, options = {}){
     const remainMs = Math.max(0, endMs - Date.now());
     const remainSec = Math.ceil(remainMs / 1000);
     discussionTimerInner.textContent = formatTimerText(remainSec);
+    applyDeckExilePulseState();
 
     if(remainMs <= 0 && !discussionPhaseEnded){
       discussionPhaseEnded = true;
@@ -1410,6 +1446,7 @@ function subscribeHands(){
   onValue(handsRef, snap => {
     state.hands = snap.val() || {};
     renderHands();
+    applyDeckExilePulseState();
   });
 }
 function subscribeDeckConfig(){
@@ -2043,6 +2080,7 @@ function renderCenterDeck(){
   }
 
   playerCircle.appendChild(wrap);
+  applyDeckExilePulseState();
 }
 
 function getDealTargetPoint(playerId){
@@ -2180,6 +2218,7 @@ function appendDeckExileCard(cardName){
   img.src = BACK_IMG;
   img.loading = 'lazy';
 
+  if(shouldPulseExileCards()) card.classList.add('discussion-pulse');
   card.appendChild(img);
   tray.appendChild(card);
   tray.classList.add('visible');
