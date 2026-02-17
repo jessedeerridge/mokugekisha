@@ -911,7 +911,7 @@ function hasUsedButlerEffect(playerId){
   return !!(state.butlerEffectUsedBy && state.butlerEffectUsedBy[playerId]);
 }
 function canCurrentUserVote(){
-  return !hasUsedButlerEffect(state.userId);
+  return state.seatedTable !== null && !hasUsedButlerEffect(state.userId);
 }
 function syncMyHandButlerEffectState(){
   if(!myHandEl) return;
