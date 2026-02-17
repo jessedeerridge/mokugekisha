@@ -368,12 +368,16 @@
 
   /* 他プレイヤーのミニカード（ネームタグの下に扇状） */
   .player-tag .mini-hand{
+    --mini-hand-scale-factor:1;
     position:absolute;left:50%;top:100%;
-    transform:translate(-50%,6px) scale(var(--mini-zone-scale));
+    transform:translate(-50%,6px) scale(calc(var(--mini-zone-scale) * var(--mini-hand-scale-factor)));
     transform-origin:top center;
     width:var(--zone-circle-size);
     height:var(--zone-circle-size);
     pointer-events:none;
+  }
+  .player-tag .mini-hand.two-cards{
+    --mini-hand-scale-factor:0.7;
   }
   .player-tag .mini-hand.next-turn-target{
     pointer-events:auto;
@@ -401,8 +405,8 @@
     animation:detectivePulse 1s ease-in-out infinite;
   }
   @keyframes detectivePulse{
-    0%,100%{ transform:translate(-50%,6px) scale(var(--mini-zone-scale)); }
-    50%{ transform:translate(-50%,6px) scale(calc(var(--mini-zone-scale) * 1.11)); }
+    0%,100%{ transform:translate(-50%,6px) scale(calc(var(--mini-zone-scale) * var(--mini-hand-scale-factor))); }
+    50%{ transform:translate(-50%,6px) scale(calc(var(--mini-zone-scale) * var(--mini-hand-scale-factor) * 1.11)); }
   }
   .mini-hand.detective-selectable .mini-card{
     animation-name:detectiveCardPulse;
@@ -2985,6 +2989,9 @@ function renderPlayerCircle(players){
       const revealPlayerCards = revealAllCards || hasUsedButlerEffect(p.id);
       const pulseTargetCards = !hasUsedButlerEffect(p.id);
       const count = cards.length;
+      if(count === 2){
+        miniHand.classList.add('two-cards');
+      }
       const spread = 70;
       const base = (count > 1) ? (-spread/2) : 0;
 
