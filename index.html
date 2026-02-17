@@ -911,7 +911,7 @@ function hasUsedButlerEffect(playerId){
   return !!(state.butlerEffectUsedBy && state.butlerEffectUsedBy[playerId]);
 }
 function canCurrentUserVote(){
-  return !hasUsedButlerEffect(state.userId);
+  return state.seatedTable !== null && !hasUsedButlerEffect(state.userId);
 }
 function syncMyHandButlerEffectState(){
   if(!myHandEl) return;
@@ -993,7 +993,7 @@ const EXILE_SLIDE_DURATION_MS = speedAdjustedMs(360);
 const KILLER_PEEK_DURATION_MS = speedAdjustedMs(320);
 const KILLER_RETURN_DURATION_MS = speedAdjustedMs(260);
 const DEFAULT_DISCUSSION_DURATION_SEC = 4 * 60;
-const TIMER_PRESET_SECONDS = [4 * 60, 5 * 60, 6 * 60];
+const TIMER_PRESET_SECONDS = [ 4 * 60, 5 * 60, 6 * 60];
 const KILLER_PEEK_OFFSET_X = -52;
 const KILLER_PEEK_OFFSET_Y = -8;
 const KILLER_PEEK_ROTATE_DEG = -4;
