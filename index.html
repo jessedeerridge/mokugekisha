@@ -427,7 +427,7 @@
     padding:calc(2px * var(--card-ui-scale, 1));
     font-size:calc(7px * var(--card-ui-scale, 1));
     line-height:1.2;
-    white-space:normal;
+    white-space:pre-line;
     overflow-wrap:anywhere;
   }
 
@@ -499,6 +499,7 @@
     align-items:center;
     justify-content:center;
     text-align:center;
+    white-space:pre-line;
     box-sizing:border-box;
     pointer-events:none;
   }
@@ -1048,13 +1049,22 @@ function appendCardNameBadge(cardEl, name){
   badge.textContent = getCardBadgeLabel(name);
   cardEl.appendChild(badge);
 }
+function formatDescriptionEveryChars(text, charsPerLine = 6){
+  if(!text) return '';
+  const chars = Array.from(text);
+  const lines = [];
+  for(let i = 0; i < chars.length; i += charsPerLine){
+    lines.push(chars.slice(i, i + charsPerLine).join(''));
+  }
+  return lines.join('\n');
+}
 function appendCardDescription(cardEl, name){
   if(!cardEl || !name) return;
   const desc = getCardDescription(name);
   if(!desc) return;
   const descBox = document.createElement('div');
   descBox.className = 'card-desc-box';
-  descBox.textContent = desc;
+  descBox.textContent = formatDescriptionEveryChars(desc, 6);
   cardEl.appendChild(descBox);
 }
 function syncCardNameAndDescription(cardEl, name, showFace){
