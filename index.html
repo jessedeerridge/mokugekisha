@@ -956,6 +956,7 @@ let hasInitializedRoomSubscription = false;
 let hasInitializedVotePhaseSubscription = false;
 let hiddenWindowStartAt = document.hidden ? Date.now() : null;
 let hiddenWindowEndAt = null;
+let pendingHiddenCardIndex = null;
 const CARD_MOVE_SPEED_RATIO = 0.7;
 const TRANSFER_TO_DRAW_DELAY_MS = speedAdjustedMs(900);
 const TRANSFER_TO_PLAYER_SYNC_DELAY_MS = speedAdjustedMs(380);
@@ -1740,14 +1741,24 @@ async function finishPointerDrag(clientX, clientY){
   if(!activePointerDrag) return;
   const { cardIndex: draggedIndex, dropTargetEl, cardEl } = activePointerDrag;
   const shouldDrop = !!dropTargetEl;
+  if(shouldDrop) pendingHiddenCardIndex = draggedIndex;
   cleanupPointerDragState({ keepSourceHidden: shouldDrop });
-  if(!shouldDrop) return;
+  if(!shouldDrop){
+    pendingHiddenCardIndex = null;
+    return;
+  }
   const transferType = dropTargetEl.dataset.transferTarget;
-  const transferred = (transferType === 'deck')
-    ? await transferCardToDeck(draggedIndex)
-    : await transferCardToNextPlayer(draggedIndex);
+  let transferred = false;
+  try {
+    transferred = (transferType === 'deck')
+      ? await transferCardToDeck(draggedIndex)
+      : await transferCardToNextPlayer(draggedIndex);
+  } finally {
+    pendingHiddenCardIndex = null;
+  }
   if(!transferred && cardEl){
     cardEl.classList.remove('pointer-dragging-source');
+    renderHands();
   }
 }
 
@@ -1833,6 +1844,10 @@ function renderMyHand(){
     card.appendChild(img);
     appendCardNameBadge(card, name);
     appendCardDescription(card, name);
+
+    if(idx === pendingHiddenCardIndex){
+      card.classList.add('pointer-dragging-source');
+    }
 
     if(canTransfer){
       card.style.cursor = 'grab';
