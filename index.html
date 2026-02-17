@@ -171,6 +171,7 @@
     --zone-circle-size:96px;
     --mini-zone-scale:0.9;
     --deck-offset-x:18px;
+    --help-card-scale:1.4;
   }
   .shuffle-deck{
     position:relative;
@@ -585,10 +586,12 @@
     gap:10px;
   }
   .help-grid .card{
-    width:100%;
-    max-width:84px;
-    height:auto;
-    aspect-ratio:2 / 3;
+    width:60px;
+    height:90px;
+    max-width:none;
+    aspect-ratio:auto;
+    transform:scale(var(--help-card-scale));
+    transform-origin:center;
   }
   .help-item{
     display:flex;
@@ -596,6 +599,7 @@
     align-items:center;
     justify-content:center;
     cursor:default;
+    min-height:calc(90px * var(--help-card-scale));
   }
   .help-item.host-clickable{cursor:pointer;}
   .help-item.disabled{opacity:.25;}
@@ -1029,6 +1033,13 @@ function appendCardDescription(cardEl, name){
   descBox.className = 'card-desc-box';
   descBox.textContent = desc;
   cardEl.appendChild(descBox);
+}
+function syncCardNameAndDescription(cardEl, name, showFace){
+  if(!cardEl) return;
+  cardEl.querySelectorAll(':scope > .card-name-badge, :scope > .card-desc-box').forEach((el) => el.remove());
+  if(!showFace || !name) return;
+  appendCardNameBadge(cardEl, name);
+  appendCardDescription(cardEl, name);
 }
 function cssMs(name){
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -2093,6 +2104,7 @@ function renderCenterDeck(){
     img.src = showExileFace ? cardImg(name) : BACK_IMG;
     img.loading = 'lazy';
     card.appendChild(img);
+    syncCardNameAndDescription(card, name, showExileFace);
     exileTray.appendChild(card);
   });
   if(excludedCards.length) exileTray.classList.add('visible');
@@ -2143,6 +2155,7 @@ function renderCenterDeck(){
       img.src = revealAllCards && deckCardName ? cardImg(deckCardName) : BACK_IMG;
       img.loading = 'lazy';
       card.appendChild(img);
+      syncCardNameAndDescription(card, deckCardName, revealAllCards);
       shuffleDeck.appendChild(card);
     }
 
@@ -2246,6 +2259,7 @@ function updateDeckExileTrayState(){
     if(!img) return;
     const cardName = (img.alt || '').replace(/^除外カード:/, '');
     img.src = showExileFace && cardName ? cardImg(cardName) : BACK_IMG;
+    syncCardNameAndDescription(cardEl, cardName, showExileFace);
   });
 }
 
